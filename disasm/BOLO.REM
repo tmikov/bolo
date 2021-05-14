@@ -1,0 +1,108 @@
+
+
+                   ﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂﬂ
+                      SOURCER REMARKS FILE - SAMPLE REMARKS
+                   ‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹
+
+
+ ±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±± DATA REMARKS ±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+
+        Remarks in this section are linked to the .def  file,  section  3
+        relating to data items.    Remarks  will  appear  in  the  source
+        code output to the right of the data reference  definition.   Each
+        remark can encompass as many lines as needed, up to 34 characters
+        per line.  Each line starts with the 3 digit hex reference number
+        starting at 001 to a maximum of 3FFh (1023 entries).   The number
+        is also entered in the .def file for the particular data item(s).
+
+
+    --------- Data Remarks -----------  -------- comments ignored here --------
+end
+
+
+ ±±±±±±±±±±±±±±±±±±±±±±±±±±±±±± LOCATION REMARKS ±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+
+        Remarks in this section are linked to the .def  file,  section  3
+        relating to location references.   Remarks  will  appear  in  the 
+        source code output as lines prior to  the  location  item.   Each
+        remark can encompass as many lines as needed, up to 76 characters
+        per line.  Each line starts with the 2 digit hex reference number
+        starting at 01 up to a maximum of FEh (254 entries).   The number
+        is entered in the .def file for the particular location item(s).
+
+        relating to location references.   Remarks  will  appear  in  the 
+        source code output as lines prior to  the  location  item.   Each
+        remark can encompass as many lines as needed, up to 76 characters
+        per line.  Each line starts with the 2 digit hex reference number
+        starting at 01 up to a maximum of FEh (254 entries).   The number
+        is entered in the .def file for the particular location item(s).
+
+
+    ----------------------- Location Reference Remarks ------------------------
+01
+        Restore int 8, int 9, set text mode, print msg_exit and terminate.
+        output: ax, di, zf
+        di = tmp1_ptr + sext(bl) + (sext(bh)<<8)>>2
+        ax = sext(*di)
+        zf = test(ax)
+end
+   
+ ±±±±±±±±±±±±±±±±±±±±±±±±±±±±± SUBROUTINE REMARKS ±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+
+        Remarks in this section are linked to the .def  file,  section  3
+        relating to subroutine references.   Remarks will appear  in  the 
+        source code output as lines prior to the subroutine  item.   Each
+        remark can encompass as many lines as needed, up to 76 characters
+        per line.  Each line starts with the 2 digit hex reference number
+        starting at 01 up to a maximum of FFh (255 entries).   The number
+        is entered in the .def file for a particular subroutine item(s).
+
+
+    ---------------------- Subroutine Reference Remarks -----------------------
+01                                 tmp1_sub
+         
+        input: bl, bh
+        output: ax, di, zf
+        di = tmp1_ptr + sext(bl) + (sext(bh)<<8)>>2
+        ax = sext(*di)
+        zf = test(ax)
+02                                 tmp2_sub
+         
+        input: dl, dh
+        output: al, si, zf
+        si = tmp2_ptr + sext(dl) + (sext(dh)<<8)>>2
+        al = *si
+        zf = test(al)
+03                                 draw_gmaze_22x7
+         
+        Draw "GENERATING MAZE".
+        Copy 7 rows of 22 (0x16) bytes from ds:[offset bmp_gmaze_22x7] to
+        [dest_seg]:[dest_ofs]
+        The destination has a stride of 40 (0x28) bytes.
+04                                 draw_char_1x7
+         
+        Input
+                 al: index char "0-9A-Z! c"
+                 es, di: destination
+        Copy 7 rows of 1 bytes from ds:[offset bmps_font_1x7 + (u16)al * 7] to
+        two pages:
+                es:[di] and es:[di + 0x2000]
+        The destination has a stride of 40 (0x28) bytes.
+05                                 draw_bolo_8x20
+         
+        Input: es, di: destination
+        Enable EGA planes 1,3 (0xA -> bright green).
+        Copy 20 rows of 8 bt (64 px) from ds:[offset bmp_bolo_8x20] to es:di
+        with dest stride 40.
+06                                 draw_str
+         
+        Input:
+                bx - ASCII string terminating in a negative char.
+                di - screen offset
+        Draw a string starting at the specified screen offset. Each char is
+        8x7 pixels.
+        sub di,117h moves to the next char (di - 7*40 + 1).
+07                                 clr_alt_box
+         
+        Clear the 0x0-224x194 pixel box in the alternative video page.
+end
