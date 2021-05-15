@@ -59,18 +59,25 @@ end
 
 
     ---------------------- Subroutine Reference Remarks -----------------------
-01                                 tmp1_sub
+01                                 tmp1_readxy
          
-        input: bl, bh
+        input: bl:x, bh:y
         output: ax, di, zf
-        di = tmp1_ptr + sext(bl) + (sext(bh)<<8)>>2
+        Read from the byte array tmp1_buf_e with 64b stride
+        di = tmp1_buf_e + x + y*64
         ax = sext(*di)
         zf = test(ax)
-02                                 tmp2_sub
+02                                 tmp2_readxy
          
-        input: dl, dh
-        output: al, si, zf
-        si = tmp2_ptr + sext(dl) + (sext(dh)<<8)>>2
+        input: 
+                dl: x
+                dh: y
+        output: 
+                si: buffer address
+                al: value in buffer
+                zf: test on al
+        Read from the byte array tmp2_buf_e with 64b stride.
+        si = tmp2_buf_e + x + y*64
         al = *si
         zf = test(al)
 03                                 draw_gmaze_22x7
@@ -105,4 +112,81 @@ end
 07                                 clr_alt_box
          
         Clear the 0x0-224x194 pixel box in the alternative video page.
+08                                 vid_offset
+        Inputs: 
+                CF:BL: 9-bit x
+                BH:    y
+        Outputs: 
+                DI: offset in video page (stride 40)
+                AL: 1-bit mask of the pixel at the offset
+        Preserve: BX, CX
+        Calculate video offset and bitmask from x and y coordinates.
+        x is 9 bit.
+        offset = CF:BL/8 + BH*8+BH*32
+        mask = 0x80 >> (CF:BL%8)
+09                                 vert_line
+        Draw a vertical 1-pixel line
+        Inputs:
+                CF:BL: 9-bit x
+                BH: y
+                CX: number of rows - 1
+                ES: dest segment
+        Outputs: CX = 0
+        Preserve: BX, DX
+        Logical OR of ES:DI with 1 bit mask with stride 40 for CX + 1 rows.
+0A                                 horiz_line
+        Draw a horizontal 1-pixel width line
+        Inputs:
+                CF:BL: 9-bit x
+                BH: y
+                CX: length in pixels - 1
+                ES: dest segment
+        Outputs: CX = 0
+        Preserve: BX, DX
+0B                                 draw_rect
+        Draw a rectangle with 1-pixel lines
+        Inputs:
+                BL=x
+                BH=y
+                DL=width pixels
+                DH=height pixels
+        Preserve: BX, DX
+0C                                 draw_comp_arr
+        Draw the compass arrow based on ship_angle_e. Note that the
+        arrow bitmaps are indexed through comp_offs, but they are
+        partly overlapping to save a few bytes.
+        The values of ship_angle go clockwise: 0 is North, 3 is East, etc.
+        N, NE, E, SE, S, SW, W, NW
+0D                                 draw_ship
+        Draw rotated ship and gun and collision detection.
+        Collision detection by counting screen bytes that already had
+        the same bit set.
+0E                                 sub_on_faster
+        Accelerate the ship.
+        vel_magn_e  holds the velocity magnitude in the range [0..5]
+        vel_angle_e holds the velocity angle: 0 (0 degrees) or 4 (180 degrees).
+        vel_angle_e is relative to ship_angle_e, so the ship moves either fwd
+        or backwards.
+        The resulting vector varies between 5,0 (5 fwd) and 5, 4 (5 backwards).
+        vel_magn_e is intended to be added to ship_angle_e.
+0F                                 getkey
+        Output: 
+                AL: scan code or 0
+                ZF: test AL
+        Performs some logic which I don't fully understand yet. This is
+        what I understand. It reads kbdin_key_e (which is set by int 9)
+        and clear it. Handles ESC, F1, F2, F3 directly and checks again.
+        Otherwise returns the scancode in AL and updates ZF.
+10                                 handle_kbd
+        If there is a key, and it is valid, and there hasn't been a 
+        collision, process the key by calling its kbd func.
+11                                 update_fuel
+        fuel_level_e:dw is the level of fuel, 16 bits
+        fuel_disp_e:db  is the display representation, corresponding to the
+                top 8 bits of fuel_level_e. fuel_disp_e follows fuel_level_e
+                gradually (+1/-1 per update).
+        Subtract double the velocity from the fuel level. If negative, display
+        "OUT OF FUEL" and end level.
+        Update fuel_disp_e with +1, 0, or -1 to move it towards hi(fuel_level_e).
+        Render fuel_e on screen.
 end
