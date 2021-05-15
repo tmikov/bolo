@@ -41,10 +41,6 @@ end
     ----------------------- Location Reference Remarks ------------------------
 01
         Restore int 8, int 9, set text mode, print msg_exit and terminate.
-        output: ax, di, zf
-        di = tmp1_ptr + sext(bl) + (sext(bh)<<8)>>2
-        ax = sext(*di)
-        zf = test(ax)
 end
    
  ±±±±±±±±±±±±±±±±±±±±±±±±±±±±± SUBROUTINE REMARKS ±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
@@ -63,7 +59,7 @@ end
          
         input: bl:x, bh:y
         output: ax, di, zf
-        Read from the byte array tmp1_buf_e with 64b stride
+        Read from the byte array tmp1_buf_e[64][64]
         di = tmp1_buf_e + x + y*64
         ax = sext(*di)
         zf = test(ax)
@@ -76,7 +72,7 @@ end
                 si: buffer address
                 al: value in buffer
                 zf: test on al
-        Read from the byte array tmp2_buf_e with 64b stride.
+        Read from the byte array tmp2_buf_ei[64][64] with 64b stride.
         si = tmp2_buf_e + x + y*64
         al = *si
         zf = test(al)
@@ -189,4 +185,21 @@ end
         "OUT OF FUEL" and end level.
         Update fuel_disp_e with +1, 0, or -1 to move it towards hi(fuel_level_e).
         Render fuel_e on screen.
+12                                 edit_levdens
+        Edit the level and density on screen.
+        Calls edit_digit two times with the values and coordinates of leveli
+        and density.
+        Initializes time_5bit.
+13                                 edit_digit
+        Inputs:
+                di: screen offset of digit
+                bl: max value + 1 (0xA for level, 6 for density)
+                bh: current value
+        Output: al: the new value
+        Edit a digit on screen.
+14                                 draw_mstrs
+        Inputs:
+                ds:si - a list of string offset, screen offset pairs, ending
+                        with a 0.
+        Draw a list of strings to specified coordinates on screen.
 end
