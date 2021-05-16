@@ -31,7 +31,9 @@ static std::vector<uint8_t> readBytes(FILE *f, unsigned upto) {
 
 int main(int argc, const char **argv) {
     unsigned width, height;
-    if (argc != 3 || 
+    bool prArray = argc >= 4;
+
+    if (argc < 3 || 
         sscanf(argv[1], "%u", &width) != 1 ||
         sscanf(argv[2], "%u", &height) != 1) {
         fprintf(stderr, "syntax: %s width_bytes height < bmp.lst\n", argv[0]);
@@ -42,6 +44,22 @@ int main(int argc, const char **argv) {
     if (bytes.size() != width * height) {
         fprintf(stderr, "Not enough bytes\n");
         return 2;
+    }
+
+    if (prArray) {
+        printf("  // %u x %u (%u bytes)\n", width, height, width * height);
+        for(unsigned i = 0; i != width * height; ++i) {
+            if (i % 16 == 0) {
+                if (i)
+                    printf("\n");
+                printf("  ");
+            } else {
+                printf(" ");
+            }
+            printf("0x%02x,", bytes[i]);
+        }
+        printf("\n");
+        return 0;
     }
 
     for(unsigned row = 0; row != height; ++row) {

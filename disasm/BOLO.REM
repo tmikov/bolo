@@ -202,4 +202,16 @@ end
                 ds:si - a list of string offset, screen offset pairs, ending
                         with a 0.
         Draw a list of strings to specified coordinates on screen.
+15                                 rndnum
+        Inputs:
+                al: random range + 1
+        Return:
+                al: a random number in the range [0..AL).
+                zf: test AL
+16                                 rnd_update
+        Inputs: AX: mask + 1
+        Return: AL (something) and ZF
+        I am not sure but I think this routine shuffles the random generator
+        state while also taking the current time into consideration.
+        The result is masked with AX-1.
 end
