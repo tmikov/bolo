@@ -214,4 +214,7 @@ end
         I am not sure but I think this routine shuffles the random generator
         state while also taking the current time into consideration.
         The result is masked with AX-1.
+17                                 tmp2_rnd_xy
+        Output: DL: x, DH: y, AL: tmp2_buf[x,y]
+        Generate random numbers x=[1..61], y=[3..60] until tmp2_buf[x,y] >= 0.
 end

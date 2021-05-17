@@ -4,8 +4,10 @@
 
 #include "blit.h"
 
+#include <assert.h>
 #include <stdalign.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,19 +30,122 @@ typedef enum EGAColor {
   EGAWhite = 15,
 } EGAColor;
 
-typedef struct RGBA8 {
-  uint8_t r, g, b, a;
-} RGBA8;
-
 #define EGA_WIDTH 320
 #define EGA_STRIDE 40
 #define EGA_HEIGHT 200
 #define EGA_PAGE_SIZE 0x2000
 #define EGA_PLANES 4
 
+/// "SBOL" strings are a sequence of characters terminated by a negative, using
+/// this encoding:
+///    0-9: digits
+///    10-35: letters
+///    36: '!'
+///    37: ' '
+///    38: 'c' (copyright symbol)
+///    extra icons
+typedef int8_t SBOL;
+
+#define SBOL_0 0
+#define SBOL_A 10
+#define SBOL_Z 35
+#define SBOL_SPACE 37
+#define SBOL_END -1
+
+#define SB(x)                                          \
+  ((x) == ' '              ? SBOL_SPACE                \
+       : (x) <= '9'        ? (x) - '0'                 \
+       : ((x) | 32) <= 'z' ? SBOL_A + ((x) | 32) - 'a' \
+                           : -1)
+
+/// A pair of SBOL string and a screen offset.
+/// A sequence of these ends with a null string pointer.
+typedef struct SBOLDesc {
+  const SBOL *str;
+  unsigned offset;
+} SBOLDesc;
+
+#define NUM_SPRITES 48
+#define SPRITE_W 1
+#define SPRITE_H 7
+
+static uint8_t level;
+static uint8_t density;
+/// Score as a SBol string.
+static SBOL strb_score[7] =
+    {SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_0, SBOL_END};
+/// High score as a string
+static SBOL strb_hisco[7] =
+    {SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_0, SBOL_END};
+/// Level of the high score.
+static uint8_t high_level;
+/// Density of the high score
+static uint8_t high_dens;
+/// Increments every 54.94 ms
+static uint8_t time_tick;
+/// I believe this is used to keep the random generator state.
+static uint8_t rnd_state[32] = {0x0B, 0xED, 0x5F, 0x8F, 0xB5, 0x3B, 0xE3, 0x73, 0x67, 0x23, 0x6D,
+                                0x11, 0xBD, 0xA5, 0xF3, 0xDF, 0x71, 0x2B, 0x77, 0x85, 0xE5, 0x37,
+                                0xAB, 0xEF, 0xF7, 0xD5, 0x0F, 0x51, 0xEB, 0xF3, 0x2B, 0xC3};
+
+/// This value is always in the range 0..31. It is occasionally updated with
+/// the current tick with some offset.
+static uint8_t time_5bit;
+#define TIME_5BIT_MASK 0x1F
+
+static uint8_t tmp1_buf[64][64];
+static uint8_t tmp2_buf[64][64];
+
+/// Destination segment for graphics writes.
+static unsigned dest_seg; // 4F8Ah
+
+static uint8_t coll_flags1; // 5043h
+/// Ship velocity magnitude [0..5]
+static uint8_t vel_magn; // 50B7h
+/// Ship angle [0..7]. N, NE, E, SE, S, SW, W, NW.
+static uint8_t ship_angle; // 50D7h
+/// Absolute gun angle [0..7].
+static uint8_t gun_angle; // 5177h
+/// The angle of the ship velocity relative to the ship angle:
+/// It is either 0 or 4 (when moving backwards).
+static uint8_t vel_angle; // 5178h
+
+static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
+static void draw_bolo_8x20(unsigned offset);
+static void draw_mstrs(const SBOLDesc *strings);
+static void draw_str(unsigned offset, const SBOL *str);
+static void draw_char_1x7(unsigned offset, SBOL ch);
+static uint8_t rnd_update(uint8_t limit);
+static uint8_t rndnum(uint8_t limit);
+
+typedef struct XYPair {
+  uint8_t x, y;
+} XYPair;
+static struct XYPair tmp2_rnd_xy();
+
+static inline uint8_t tmp2_readxy(uint8_t x, uint8_t y) {
+  return tmp2_buf[y][x];
+}
+
+static const uint8_t bmps_font_1x7[];
+static const uint8_t bmp_gmaze_22x7[];
+static const uint8_t sprites_1x7[];
+static const uint8_t bmp_bolo_8x20[];
+static const uint8_t bmp_comp_4x31[];
+static const uint8_t bmps_gun_1x7[8][7];
+static const uint8_t bmps_ship_1x7[8][7];
+static const uint8_t *const gun_offs[8];
+static const uint8_t *const ship_offs[8];
+
+typedef struct RGBA8 {
+  uint8_t r, g, b, a;
+} RGBA8;
+
 static alignas(uint32_t) uint8_t g_ega_screen[EGA_PLANES][EGA_PAGE_SIZE * 2];
 static uint8_t g_ega_mask;
 static unsigned g_ega_page;
+
+#define VID_OFFSET(x, y) ((y)*EGA_STRIDE + (x) / 8)
 
 static RGBA8 g_ega_palette[16] = {
     {0x00, 0x00, 0x00}, //  0
@@ -131,89 +236,6 @@ static inline unsigned ega_fill(unsigned offset, uint8_t value, unsigned len, ui
   return offset;
 }
 
-/// "SBOL" strings are a sequence of characters terminated by a negative, using
-/// this encoding:
-///    0-9: digits
-///    10-35: letters
-///    36: '!'
-///    37: ' '
-///    38: 'c' (copyright symbol)
-///    extra icons
-typedef int8_t SBOL;
-
-#define SBOL_0 0
-#define SBOL_A 10
-#define SBOL_Z 35
-#define SBOL_SPACE 37
-#define SBOL_END -1
-
-#define SB(x)                                          \
-  ((x) == ' '              ? SBOL_SPACE                \
-       : (x) <= '9'        ? (x) - '0'                 \
-       : ((x) | 32) <= 'z' ? SBOL_A + ((x) | 32) - 'a' \
-                           : -1)
-
-/// A pair of SBOL string and a screen offset.
-/// A sequence of these ends with a null string pointer.
-typedef struct SBOLDesc {
-  const SBOL *str;
-  unsigned offset;
-} SBOLDesc;
-
-#define NUM_SPRITES 48
-#define SPRITE_W 1
-#define SPRITE_H 7
-
-static uint8_t level;
-static uint8_t density;
-/// Score as a SBol string.
-static SBOL strb_score[7] =
-    {SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_0, SBOL_END};
-/// High score as a string
-static SBOL strb_hisco[7] =
-    {SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_0, SBOL_END};
-/// Level of the high score.
-static uint8_t high_level;
-/// Density of the high score
-static uint8_t high_dens;
-/// Increments every 54.94 ms
-static uint8_t time_tick;
-/// I believe this is used to keep the random generator state.
-static uint8_t rnd_state[32] = {0x0B, 0xED, 0x5F, 0x8F, 0xB5, 0x3B, 0xE3, 0x73, 0x67, 0x23, 0x6D,
-                                0x11, 0xBD, 0xA5, 0xF3, 0xDF, 0x71, 0x2B, 0x77, 0x85, 0xE5, 0x37,
-                                0xAB, 0xEF, 0xF7, 0xD5, 0x0F, 0x51, 0xEB, 0xF3, 0x2B, 0xC3};
-
-/// This value is always in the range 0..31. It is occasionally updated with
-/// the current tick with some offset.
-static uint8_t time_5bit;
-#define TIME_5BIT_MASK 0x1F
-
-static uint8_t coll_flags1; // 5043h
-/// Ship velocity magnitude [0..5]
-static uint8_t vel_magn; // 50B7h
-/// Ship angle [0..7]. N, NE, E, SE, S, SW, W, NW.
-static uint8_t ship_angle; // 50D7h
-/// Absolute gun angle [0..7].
-static uint8_t gun_angle; // 5177h
-/// The angle of the ship velocity relative to the ship angle:
-/// It is either 0 or 4 (when moving backwards).
-static uint8_t vel_angle; // 5178h
-
-static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
-static void draw_bolo_8x20(unsigned offset);
-static void draw_mstrs(const SBOLDesc *strings);
-static void draw_str(unsigned offset, const SBOL *str);
-static void draw_char_1x7(unsigned offset, SBOL ch);
-static uint8_t rnd_update(uint8_t limit);
-static uint8_t rndnum(uint8_t limit);
-
-static const uint8_t bmps_font_1x7[];
-static const uint8_t sprites_1x7[];
-static const uint8_t bmp_bolo_8x20[];
-static const uint8_t bmp_comp_4x31[];
-static const uint8_t *const gun_offs[8];
-static const uint8_t *const ship_offs[8];
-
 /// 2913:02C1                       ega_map_mask    proc    near
 static inline void ega_map_mask(uint8_t mask) {
   g_ega_mask = mask;
@@ -233,15 +255,96 @@ draw_bmp(unsigned offset, const uint8_t *bmp, unsigned w, unsigned h, uint8_t ma
   }
 }
 
+/// Like memset() but returns a pointer to the end.
+static inline uint8_t *mempset(uint8_t *dst, uint8_t value, unsigned len) {
+  memset(dst, value, len);
+  return dst + len;
+}
+
+/// Draw generating maze, clear tmp1_buf, init tmp2_buf
+/// 2913:0321                       init_maze       proc    near
+static void init_maze() {
+  ega_map_mask(EGAWhite);
+  draw_bmp(dest_seg + VID_OFFSET(16, 5), bmp_gmaze_22x7, 22, 7, EGAWhite);
+  memset(tmp1_buf, 0, sizeof(tmp1_buf));
+
+  // This is the state of the buffer at the end (the middle has been collapsed):
+  //
+  // 00: 00000000000000000000000000000000
+  // 01: 00000000000000000000000000000000
+  // 02: 00080808080808080808080808080000
+  // 03: 040f0f0f0f0f0f0f0f0f0f0f0f0f0100
+  // 04: 040f0f0f0f0f0f0f0f0f0f0f0f0f0100
+  // ..  040f0f0f0f0f0f0f0f0f0f0f0f0f0100
+  // ..  040f0f0f0f0f0f0f0f0f0f0f0f0f0100
+  // ..  040f0f0f0f0f0f0f0f0f0f0f0f0f0100
+  // ..  040f0f0f0f0f0f0f0f0f0f0f0f0f0100
+  // 61: 040f0f0f0f0f0f0f0f0f0f0f0f0f0100
+  // 62: 00020202020202020202020202020000
+  // 63: 00000000000000000000000000000000
+  //
+  // My interpretation is:
+  // 04 - left boundary
+  // 08 - top boundary
+  // 01 - right boundary
+  // 02 - bottom boundary
+  // 0f - middle
+
+  uint8_t *b2 = tmp2_buf[0];
+  // row 0, 1, 2:0
+  b2 = mempset(b2, 0, 2 * 64 + 1);
+  // row [2:1..2:61]
+  b2 = mempset(b2, 8, 64 - 1 - 2);
+  // row 2:62, 2:63
+  *b2++ = 0;
+  *b2++ = 0;
+  // row 3:0
+  *b2++ = 4;
+  // row [3:1 .. 61:61]
+  b2 = mempset(b2, 0x0F, 63 + 56 * 64 + 62);
+  // row 61:62
+  *b2++ = 1;
+  // row 61:63
+  *b2++ = 0;
+  // row 62:0
+  *b2++ = 0;
+  // row [62:1..62:61]
+  b2 = mempset(b2, 2, 64 - 1 - 2);
+  // row [62:62..63:63]
+  b2 = mempset(b2, 0, 2 + 64 * 2);
+  assert(b2 == tmp2_buf[0] + sizeof(tmp2_buf) && "b2 must cover tmp2_buf");
+
+  // Fill the middle sides: 01, 00 on the right, followed by 04 on the left.
+  // Row 3:62
+  b2 = tmp2_buf[0] + 3 * 64 + 62;
+  unsigned cnt = 57;
+  do {
+    b2[0] = 1;
+    b2[1] = 0;
+    b2[2] = 4;
+    b2 += 64;
+  } while (--cnt);
+}
+
+#ifndef NDEBUG
+static void dump_maze() {
+  for (unsigned y = 0; y != 64; ++y) {
+    for (unsigned x = 0; x != 64; ++x) {
+      printf("%02x", tmp2_buf[y][x]);
+    }
+    printf("\n");
+  }
+}
+#endif
+
 /// Clear both video pages and display page 0.
 /// 2913:04EB                       clear_vp0       proc    near
 static void clear_vp0() {
   ega_map_mask(EGAWhite);
   memset(g_ega_screen, 0, sizeof(g_ega_screen));
+  dest_seg = 0;
   ega_set_page(0);
 }
-
-#define VID_OFFSET(x, y) ((y)*EGA_STRIDE + (x) / 8)
 
 /// Calculate offset in video memory
 /// 2913:0525                       vid_offset      proc    near
@@ -297,8 +400,8 @@ static void draw_ship(unsigned pageSeg) {
   ega_map_mask(EGAHighCyan);
 
   unsigned offset = pageSeg + VID_OFFSET(104, 92);
-  const uint8_t *gunbmp = gun_offs[gun_angle];
-  const uint8_t *shipbmp = ship_offs[(ship_angle + vel_angle) & 7];
+  const uint8_t *gunbmp = bmps_gun_1x7[gun_angle];
+  const uint8_t *shipbmp = bmps_ship_1x7[(ship_angle + vel_angle) & 7];
   unsigned collisions = 0;
   unsigned cnt = 7;
 
@@ -504,6 +607,8 @@ static uint8_t rnd_update(uint8_t limit) {
   return (uint8_t)tmp & (limit - 1);
 }
 
+/// Generate a random number in the range [0..limit).
+/// 2913:2EFA                       rndnum          proc    near
 static uint8_t rndnum(uint8_t limit) {
   // Nothing to do if limit is 0.
   if (!limit)
@@ -523,6 +628,22 @@ static uint8_t rndnum(uint8_t limit) {
   while (res >= limit);
 
   return res;
+}
+
+/// Output: DL: x, DH: y, AL: tmp2_buf[x,y]
+/// Generate random numbers x=[1..61], y=[3..60] until tmp2_buf[x,y] >= 0.
+/// 2913:2F18                       tmp2_rnd_xy     proc    near
+static XYPair tmp2_rnd_xy() {
+  uint8_t x, y;
+  do {
+    do
+      x = rnd_update(64);
+    while (x >= 62 || x == 0);
+    do
+      y = rnd_update(64);
+    while (y >= 61 || x < 3);
+  } while (tmp2_readxy(x, y) & 0x80);
+  return (XYPair){.x = x, .y = y};
 }
 
 /// "BOLO"
@@ -577,6 +698,20 @@ static const uint8_t bmps_font_1x7[] = {
     0x80, 0xbc, 0x2a, 0x2a, 0x2a, 0xaa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c,
 };
 
+static const uint8_t bmp_gmaze_22x7[] = {
+    // 22 x 7 (154 bytes)
+    0x3f, 0x0f, 0xfc, 0xc0, 0xcf, 0xfc, 0xff, 0x00, 0xc0, 0xff, 0xcf, 0xfc, 0xc0, 0xc3, 0xf0, 0x00,
+    0x30, 0x30, 0x30, 0x3f, 0xf3, 0xff, 0xc0, 0xcc, 0x00, 0xf0, 0xcc, 0x00, 0xc0, 0xc3, 0x30, 0x0c,
+    0x00, 0xc0, 0xf0, 0xcc, 0x0c, 0x00, 0x3c, 0xf0, 0xcc, 0x00, 0x33, 0x00, 0xc0, 0x0c, 0x00, 0xd8,
+    0xcc, 0x00, 0xc0, 0xcc, 0x0c, 0x0c, 0x00, 0xc0, 0xd8, 0xcc, 0x00, 0x00, 0x33, 0x33, 0x03, 0x00,
+    0xc3, 0x00, 0xcf, 0xcf, 0xf0, 0xcc, 0xcf, 0xf0, 0xff, 0x0f, 0xfc, 0x0c, 0x00, 0xc0, 0xcc, 0xcc,
+    0xfc, 0x00, 0x30, 0x33, 0xff, 0x03, 0x03, 0xfc, 0xc0, 0xcc, 0x00, 0xc6, 0xcc, 0x00, 0xc0, 0xcc,
+    0x0c, 0x0c, 0x00, 0xc0, 0xc6, 0xcc, 0x0c, 0x00, 0x30, 0x33, 0x03, 0x0c, 0x03, 0x00, 0xc0, 0xcc,
+    0x00, 0xc3, 0xcc, 0x00, 0xc0, 0xcc, 0x0c, 0x0c, 0x00, 0xc0, 0xc3, 0xcc, 0x0c, 0x00, 0x30, 0x33,
+    0x03, 0x30, 0x03, 0x00, 0x3f, 0x0f, 0xfc, 0xc0, 0xcf, 0xfc, 0xc0, 0xcc, 0x0c, 0x0c, 0x0f, 0xfc,
+    0xc0, 0xc3, 0xf0, 0x00, 0x30, 0x33, 0x03, 0x3f, 0xf3, 0xff,
+};
+
 // 48 1x7 sprites
 static const uint8_t sprites_1x7[] = {
     // 1 x 336 (336 bytes)
@@ -603,40 +738,27 @@ static const uint8_t sprites_1x7[] = {
     0xf8, 0xf0, 0x00, 0x3c, 0x7e, 0xfe, 0x7e, 0x3c, 0x00, 0xf0, 0xf8, 0xfc, 0xfe, 0x7e, 0x3c, 0x18,
 };
 
-static const uint8_t bmp_gun_n[7] = {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00};
-static const uint8_t bmp_gun_ne[7] = {0x02, 0x04, 0x08, 0x10, 0x00, 0x00, 0x00};
-static const uint8_t bmp_gun_e[7] = {0, 0, 0, 0x1E, 0, 0, 0};
-static const uint8_t bmp_gun_se[7] = {0, 0, 0, 0x10, 0x08, 0x04, 0x02};
-static const uint8_t bmp_gun_s[7] = {0, 0, 0, 0x10, 0x10, 0x10, 0x10};
-static const uint8_t bmp_gun_sw[7] = {0, 0, 0, 0x10, 0x20, 0x40, 0x80};
-static const uint8_t bmp_gun_w[7] = {0, 0, 0, 0xF0, 0, 0, 0};
-static const uint8_t bmp_gun_nw[7] = {0x80, 0x40, 0x20, 0x10, 0, 0, 0};
-
-static const uint8_t *const gun_offs[8] = {
-    bmp_gun_n,
-    bmp_gun_ne,
-    bmp_gun_e,
-    bmp_gun_se,
-    bmp_gun_s,
-    bmp_gun_sw,
-    bmp_gun_w,
-    bmp_gun_nw,
+static const uint8_t bmps_gun_1x7[8][7] = {
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00},
+    {0x02, 0x04, 0x08, 0x10, 0x00, 0x00, 0x00},
+    {0, 0, 0, 0x1E, 0, 0, 0},
+    {0, 0, 0, 0x10, 0x08, 0x04, 0x02},
+    {0, 0, 0, 0x10, 0x10, 0x10, 0x10},
+    {0, 0, 0, 0x10, 0x20, 0x40, 0x80},
+    {0, 0, 0, 0xF0, 0, 0, 0},
+    {0x80, 0x40, 0x20, 0x10, 0, 0, 0},
 };
 
-static const uint8_t bmp_ship_n[7] = {0x00, 0x44, 0xFE, 0xFE, 0xFE, 0x44, 0x00};
-static const uint8_t bmp_ship_ne[7] = {0x30, 0x70, 0xF8, 0xFE, 0x3E, 0x1C, 0x18};
-static const uint8_t bmp_ship_e[7] = {0x38, 0x7C, 0x38, 0x38, 0x38, 0x7C, 0x38};
-static const uint8_t bmp_ship_se[7] = {0x18, 0x1C, 0x3E, 0xFE, 0xF8, 0x70, 0x30};
-
-static const uint8_t *const ship_offs[8] = {
-    bmp_ship_n,
-    bmp_ship_ne,
-    bmp_ship_e,
-    bmp_ship_se,
-    bmp_ship_n,
-    bmp_ship_ne,
-    bmp_ship_e,
-    bmp_ship_se,
+static const uint8_t bmps_ship_1x7[8][7] = {
+    {0x00, 0x44, 0xFE, 0xFE, 0xFE, 0x44, 0x00},
+    {0x30, 0x70, 0xF8, 0xFE, 0x3E, 0x1C, 0x18},
+    {0x38, 0x7C, 0x38, 0x38, 0x38, 0x7C, 0x38},
+    {0x18, 0x1C, 0x3E, 0xFE, 0xF8, 0x70, 0x30},
+    // NOTE: bottom part is the same as top part.
+    {0x00, 0x44, 0xFE, 0xFE, 0xFE, 0x44, 0x00},
+    {0x30, 0x70, 0xF8, 0xFE, 0x3E, 0x1C, 0x18},
+    {0x38, 0x7C, 0x38, 0x38, 0x38, 0x7C, 0x38},
+    {0x18, 0x1C, 0x3E, 0xFE, 0xF8, 0x70, 0x30},
 };
 
 static struct {
@@ -664,6 +786,9 @@ static void bolo_init(void) {
   draw_levsel();
   clear_vp0();
   draw_hud();
+  draw_levsel();
+  init_maze();
+  dump_maze();
   for (unsigned i = 0; i != 8; ++i) {
     ship_angle = i;
     gun_angle = i;
