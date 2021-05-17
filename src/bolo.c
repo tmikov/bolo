@@ -90,6 +90,10 @@ static void ega_to_rgb(void) {
   } while (++ptr, --pixcnt);
 }
 
+static inline uint8_t ega_read(unsigned offset) {
+  return g_ega_screen[0][offset];
+}
+
 static inline void ega_or(unsigned offset, uint8_t value, uint8_t mask) {
   if (mask & 1)
     g_ega_screen[0][offset] |= value;
@@ -184,6 +188,17 @@ static uint8_t rnd_state[32] = {0x0B, 0xED, 0x5F, 0x8F, 0xB5, 0x3B, 0xE3, 0x73, 
 static uint8_t time_5bit;
 #define TIME_5BIT_MASK 0x1F
 
+static uint8_t coll_flags1; // 5043h
+/// Ship velocity magnitude [0..5]
+static uint8_t vel_magn; // 50B7h
+/// Ship angle [0..7]. N, NE, E, SE, S, SW, W, NW.
+static uint8_t ship_angle; // 50D7h
+/// Absolute gun angle [0..7].
+static uint8_t gun_angle; // 5177h
+/// The angle of the ship velocity relative to the ship angle:
+/// It is either 0 or 4 (when moving backwards).
+static uint8_t vel_angle; // 5178h
+
 static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
 static void draw_bolo_8x20(unsigned offset);
 static void draw_mstrs(const SBOLDesc *strings);
@@ -196,6 +211,8 @@ static const uint8_t bmps_font_1x7[];
 static const uint8_t sprites_1x7[];
 static const uint8_t bmp_bolo_8x20[];
 static const uint8_t bmp_comp_4x31[];
+static const uint8_t *const gun_offs[8];
+static const uint8_t *const ship_offs[8];
 
 /// 2913:02C1                       ega_map_mask    proc    near
 static inline void ega_map_mask(uint8_t mask) {
@@ -270,6 +287,37 @@ static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1) {
     return;
   ofs = ega_fill(ofs, 0xFF, lenm1 / 8, ega_mask);
   ega_or(ofs, 0xFF00 >> (lenm1 & 7), ega_mask);
+}
+
+/// Draw rotated ship and gun and perform collision detection.
+/// Collision detection by counting screen bytes that already had
+/// the same bit set.
+/// 2913:0D22                       draw_ship       proc    near
+static void draw_ship(unsigned pageSeg) {
+  ega_map_mask(EGAHighCyan);
+
+  unsigned offset = pageSeg + VID_OFFSET(104, 92);
+  const uint8_t *gunbmp = gun_offs[gun_angle];
+  const uint8_t *shipbmp = ship_offs[(ship_angle + vel_angle) & 7];
+  unsigned collisions = 0;
+  unsigned cnt = 7;
+
+  do {
+    uint8_t pix = *gunbmp++ ^ *shipbmp++;
+    if (pix & ega_read(offset))
+      ++collisions;
+    ega_write(offset, pix, EGAHighCyan);
+    offset += EGA_STRIDE;
+  } while (--cnt);
+
+  if (collisions) {
+    // TODO: data_191e = 0xA;
+    // Record the collision.
+    coll_flags1 = 1;
+    // Stop the ship.
+    vel_magn = 0;
+    // TODO: data_192e = 0xA;
+  }
 }
 
 /// Draw q sequence of string/offset pairs terminated with a null string ptr.
@@ -555,6 +603,42 @@ static const uint8_t sprites_1x7[] = {
     0xf8, 0xf0, 0x00, 0x3c, 0x7e, 0xfe, 0x7e, 0x3c, 0x00, 0xf0, 0xf8, 0xfc, 0xfe, 0x7e, 0x3c, 0x18,
 };
 
+static const uint8_t bmp_gun_n[7] = {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00};
+static const uint8_t bmp_gun_ne[7] = {0x02, 0x04, 0x08, 0x10, 0x00, 0x00, 0x00};
+static const uint8_t bmp_gun_e[7] = {0, 0, 0, 0x1E, 0, 0, 0};
+static const uint8_t bmp_gun_se[7] = {0, 0, 0, 0x10, 0x08, 0x04, 0x02};
+static const uint8_t bmp_gun_s[7] = {0, 0, 0, 0x10, 0x10, 0x10, 0x10};
+static const uint8_t bmp_gun_sw[7] = {0, 0, 0, 0x10, 0x20, 0x40, 0x80};
+static const uint8_t bmp_gun_w[7] = {0, 0, 0, 0xF0, 0, 0, 0};
+static const uint8_t bmp_gun_nw[7] = {0x80, 0x40, 0x20, 0x10, 0, 0, 0};
+
+static const uint8_t *const gun_offs[8] = {
+    bmp_gun_n,
+    bmp_gun_ne,
+    bmp_gun_e,
+    bmp_gun_se,
+    bmp_gun_s,
+    bmp_gun_sw,
+    bmp_gun_w,
+    bmp_gun_nw,
+};
+
+static const uint8_t bmp_ship_n[7] = {0x00, 0x44, 0xFE, 0xFE, 0xFE, 0x44, 0x00};
+static const uint8_t bmp_ship_ne[7] = {0x30, 0x70, 0xF8, 0xFE, 0x3E, 0x1C, 0x18};
+static const uint8_t bmp_ship_e[7] = {0x38, 0x7C, 0x38, 0x38, 0x38, 0x7C, 0x38};
+static const uint8_t bmp_ship_se[7] = {0x18, 0x1C, 0x3E, 0xFE, 0xF8, 0x70, 0x30};
+
+static const uint8_t *const ship_offs[8] = {
+    bmp_ship_n,
+    bmp_ship_ne,
+    bmp_ship_e,
+    bmp_ship_se,
+    bmp_ship_n,
+    bmp_ship_ne,
+    bmp_ship_e,
+    bmp_ship_se,
+};
+
 static struct {
   sg_pass_action pass_action;
   sg_pipeline pip;
@@ -578,6 +662,13 @@ static void bolo_init(void) {
   title_screen();
   draw_hud();
   draw_levsel();
+  clear_vp0();
+  draw_hud();
+  for (unsigned i = 0; i != 8; ++i) {
+    ship_angle = i;
+    gun_angle = i;
+    draw_ship(i * 2);
+  }
   ega_to_rgb();
 
   sg_update_image(
