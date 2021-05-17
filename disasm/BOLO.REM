@@ -144,8 +144,8 @@ end
         Inputs:
                 BL=x
                 BH=y
-                DL=width pixels
-                DH=height pixels
+                DL=width pixels - 1
+                DH=height pixels - 1
         Preserve: BX, DX
 0C                                 draw_comp_arr
         Draw the compass arrow based on ship_angle_e. Note that the

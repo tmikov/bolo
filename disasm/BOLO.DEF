@@ -52,7 +52,7 @@ seg_a:04A3   sub                                ; sub_8
 seg_a:04B0   sub                                ; sub_9
 seg_a:04BD   sub                                ; sub_10
 seg_a:04CA   sub, c 07          clr_alt_box
-seg_a:04EB   sub                clear_vp0       Clear video page 0 and display it
+seg_a:04EB   sub                clear_vp0       Clear both video pages and display page 0
 seg_a:0506   sub                flip_vp         Flip the video page
 seg_a:0525   sub, c 08          vid_offset
 seg_a:054E   sub                                ; sub_11
@@ -163,8 +163,8 @@ seg_a:0100   loc, far           start
 seg_a:0107   forced, od
 seg_a:010D   loc                                ; loc_1
 seg_a:0117   forced, od
-seg_a:011D   loc                                ; loc_2
 seg_a:011D   forced, od 0000
+seg_a:011D   loc                                ; loc_2
 seg_a:0120   forced, od seg_a
 seg_a:012A   forced, od seg_a
 seg_a:012D   loc                                ; locloop_3
@@ -474,8 +474,8 @@ seg_a:1FA6   loc                                ; loc_232
 seg_a:1FA8   loc                                ; loc_233
 seg_a:1FB0   loc                                ; loc_234
 seg_a:1FB2   loc                                ; loc_235
-seg_a:1FCB   loc                                ; loc_236
 seg_a:1FCB   forced, od seg_a
+seg_a:1FCB   loc                                ; loc_236
 seg_a:1FCE   loc                                ; loc_237
 seg_a:1FDA   loc                                ; loc_238
 seg_a:1FEA   loc                                ; loc_239
@@ -664,8 +664,8 @@ seg_a:2D1F   loc                                ; loc_396
 seg_a:2D22   loc                                ; loc_397
 seg_a:2D2E   loc                                ; loc_398
 seg_a:2D51   loc                                ; loc_399
-seg_a:2D63   loc                                ; loc_400
 seg_a:2D63   forced, od seg_a
+seg_a:2D63   loc                                ; loc_400
 seg_a:2D78   loc                                ; loc_401
 seg_a:2D88   loc                                ; loc_402
 seg_a:2D9E   loc                                ; loc_403
@@ -718,34 +718,34 @@ seg_a:07EC   da, r 57                           ; data_26
 seg_a:0844   dw, osn, r 54      kbd_funcs       Handlers for each scan code
 seg_a:0970   db                                 ; data_87
 seg_a:0971   dw                                 ; data_88
-seg_a:0973   db                                 ; data_89
-seg_a:0A6C   dw, r 8                            ; data_90
-seg_a:0A7C   dw, r 28                           ; data_91
-seg_a:0B7F   db                                 ; data_92
+seg_a:0973   db                 lastkey_tick    Perhaps the tick when we last consumed a key
+seg_a:0A6C   dw, r 8                            ; data_89
+seg_a:0A7C   dw, r 28                           ; data_90
+seg_a:0B7F   db                                 ; data_91
 seg_a:0C20   dw, odn, r 8       comp_offs       Offsets of 8 compass arrow bmps
-seg_a:0C30   db                                 ; data_93
-seg_a:0C46   db                                 ; data_94
-seg_a:0C5A   db                                 ; data_96
-seg_a:0C6A   db                                 ; data_97
-seg_a:0C7E   db                                 ; data_98
-seg_a:0C92   db                                 ; data_99
-seg_a:0CA6   db                                 ; data_100
-seg_a:0CBC   db                                 ; data_101
+seg_a:0C30   db                                 ; data_92
+seg_a:0C46   db                                 ; data_93
+seg_a:0C5A   db                                 ; data_95
+seg_a:0C6A   db                                 ; data_96
+seg_a:0C7E   db                                 ; data_97
+seg_a:0C92   db                                 ; data_98
+seg_a:0CA6   db                                 ; data_99
+seg_a:0CBC   db                                 ; data_100
 seg_a:0D7C   dw, odn, r 8       ship_offs       Offsets of 8 ship bmps 1x7
-seg_a:0D8C   db                                 ; data_102
-seg_a:0D93   db                                 ; data_103
-seg_a:0D9A   db                                 ; data_104
-seg_a:0DA1   db                                 ; data_105
+seg_a:0D8C   db                                 ; data_101
+seg_a:0D93   db                                 ; data_102
+seg_a:0D9A   db                                 ; data_103
+seg_a:0DA1   db                                 ; data_104
 seg_a:0DA8   dw, odn, r 8       gun_offs        Offsets of 8 gun bmps
-seg_a:0DB8   db                                 ; data_106
-seg_a:0DBC   db                                 ; data_107
-seg_a:0DC0   db                                 ; data_108
-seg_a:0DC4   db                                 ; data_109
-seg_a:0DC7   db                                 ; data_110
-seg_a:0DCB   db                                 ; data_111
-seg_a:0DD1   db                                 ; data_112
-seg_a:0DD5   db                                 ; data_113
-seg_a:0DDC   db                                 ; data_114
+seg_a:0DB8   db                                 ; data_105
+seg_a:0DBC   db                                 ; data_106
+seg_a:0DC0   db                                 ; data_107
+seg_a:0DC4   db                                 ; data_108
+seg_a:0DC7   db                                 ; data_109
+seg_a:0DCB   db                                 ; data_110
+seg_a:0DD1   db                                 ; data_111
+seg_a:0DD5   db                                 ; data_112
+seg_a:0DDC   db                                 ; data_113
 seg_a:0E1D   db, r 111          bmps_font_1x7   39x1x7 "0-9A-Z! c"
 seg_a:0F2E   db                 unknown1
 seg_a:0F4A   db, r 9A           bmp_gmaze_22x7  "GENERATING MAZE"
@@ -773,10 +773,10 @@ seg_a:10FB   dw                 win_sofs3
 seg_a:10FD   dw, odn            win_ofs4
 seg_a:10FF   dw                 win_sofs4
 seg_a:1101   dw                 win_end
-seg_a:1103   db                                 ; data_118
-seg_a:110E   db                                 ; data_119
-seg_a:1114   db                                 ; data_120
-seg_a:112C   db                                 ; data_121
+seg_a:1103   db                                 ; data_117
+seg_a:110E   db                                 ; data_118
+seg_a:1114   db                                 ; data_119
+seg_a:112C   db                                 ; data_120
 seg_a:1153   dw, odn            tit_str
 seg_a:1155   dw                 tit_sofs
 seg_a:1157   dw, odn            tit_str1
@@ -811,123 +811,123 @@ seg_a:118F   dw                 lsel_ofsA
 seg_a:1191   dw                 levsel_end
 seg_a:1340   db, r 7C           bmp_comp_4x31
 seg_a:13D3   db, r 0A0          bmp_bolo_8x20   "BOLO" copied as bright green
-seg_a:15A9   dw, oln                            ; data_122
-seg_a:15AB   dw, oln                            ; data_123
-seg_a:15AD   dw, oln                            ; data_124
-seg_a:15AF   dw, oln                            ; data_125
-seg_a:15B1   dw, oln                            ; data_126
-seg_a:15B3   dw, oln                            ; data_127
-seg_a:15B5   dw, oln                            ; data_128
-seg_a:15B7   dw, oln                            ; data_129
-seg_a:15B9   dw, oln                            ; data_130
-seg_a:15BB   dw, oln                            ; data_131
-seg_a:15BD   dw, oln                            ; data_132
-seg_a:15BF   dw, oln                            ; data_133
-seg_a:15C1   dw, oln                            ; data_134
-seg_a:15C3   dw, oln                            ; data_135
-seg_a:15C5   db                                 ; data_136
-seg_a:15CD   da, r 0A                           ; data_137
-seg_a:15F2   db                                 ; data_138
-seg_a:160C   db                                 ; data_139
-seg_a:1752   dw                                 ; data_140
-seg_a:19CB   db                                 ; data_142
-seg_a:1C30   db, r 44                           ; data_151
-seg_a:1DE5   db                                 ; data_152
-seg_a:1DF4   db                                 ; data_153
-seg_a:1FBB   db                                 ; data_155
-seg_a:2257   db                                 ; data_158
-seg_a:2458   db                                 ; data_159
-seg_a:245C   dw                                 ; data_160
-seg_a:247A   db                                 ; data_161
-seg_a:2483   db                                 ; data_162
-seg_a:24A8   db                                 ; data_163
+seg_a:15A9   dw, oln                            ; data_121
+seg_a:15AB   dw, oln                            ; data_122
+seg_a:15AD   dw, oln                            ; data_123
+seg_a:15AF   dw, oln                            ; data_124
+seg_a:15B1   dw, oln                            ; data_125
+seg_a:15B3   dw, oln                            ; data_126
+seg_a:15B5   dw, oln                            ; data_127
+seg_a:15B7   dw, oln                            ; data_128
+seg_a:15B9   dw, oln                            ; data_129
+seg_a:15BB   dw, oln                            ; data_130
+seg_a:15BD   dw, oln                            ; data_131
+seg_a:15BF   dw, oln                            ; data_132
+seg_a:15C1   dw, oln                            ; data_133
+seg_a:15C3   dw, oln                            ; data_134
+seg_a:15C5   db                                 ; data_135
+seg_a:15CD   da, r 0A                           ; data_136
+seg_a:15F2   db                                 ; data_137
+seg_a:160C   db                                 ; data_138
+seg_a:1752   dw                                 ; data_139
+seg_a:19CB   db                                 ; data_141
+seg_a:1C30   db, r 44                           ; data_150
+seg_a:1DE5   db                                 ; data_151
+seg_a:1DF4   db                                 ; data_152
+seg_a:1FBB   db                                 ; data_154
+seg_a:2257   db                                 ; data_157
+seg_a:2458   db                                 ; data_158
+seg_a:245C   dw                                 ; data_159
+seg_a:247A   db                                 ; data_160
+seg_a:2483   db                                 ; data_161
+seg_a:24A8   db                                 ; data_162
 seg_a:259D   db, r 150          sprites_1x7
-seg_a:2927   db                                 ; data_164
-seg_a:2970   dw, osn                            ; data_165
-seg_a:2972   dw, osn                            ; data_166
-seg_a:2974   dw, osn                            ; data_167
-seg_a:2976   dw, osn                            ; data_168
-seg_a:2978   dw, osn                            ; data_169
-seg_a:297A   dw, osn                            ; data_170
-seg_a:297C   dw, osn                            ; data_171
-seg_a:297E   dw, osn                            ; data_172
-seg_a:2C6F   db                                 ; data_173
-seg_a:2C7F   db                                 ; data_174
-seg_a:2C8F   db                                 ; data_175
-seg_a:2C9F   db                                 ; data_176
-seg_a:2CA2   db                                 ; data_177
-seg_a:2CAB   db                                 ; data_178
+seg_a:2927   db                                 ; data_163
+seg_a:2970   dw, osn                            ; data_164
+seg_a:2972   dw, osn                            ; data_165
+seg_a:2974   dw, osn                            ; data_166
+seg_a:2976   dw, osn                            ; data_167
+seg_a:2978   dw, osn                            ; data_168
+seg_a:297A   dw, osn                            ; data_169
+seg_a:297C   dw, osn                            ; data_170
+seg_a:297E   dw, osn                            ; data_171
+seg_a:2C6F   db                                 ; data_172
+seg_a:2C7F   db                                 ; data_173
+seg_a:2C8F   db                                 ; data_174
+seg_a:2C9F   db                                 ; data_175
+seg_a:2CA2   db                                 ; data_176
+seg_a:2CAB   db                                 ; data_177
 seg_a:2F54   db                 level
 seg_a:2F55   db                 density
 seg_a:2F56   db, r 7            strb_score      Score as a string
 seg_a:2F5D   db, r 7            strb_hisco      High score as a string
 seg_a:2F64   db                 high_level      Level of the high score
 seg_a:2F65   db                 high_dens       Density of the high score
-seg_a:2F66   db                                 ; data_180
+seg_a:2F66   db                                 ; data_179
 seg_a:2F67   db                 time_tick       Increments every timer tick
 seg_a:2F68   db, r 20           rnd_state       Possibly the state of the random generator
 2913:2F88    db, equ, index     time_5bit_e
 2913:2F89    db, equ, index     tmp1_buf_e
 2913:3F89    db, equ, index     tmp2_buf_e
-2913:4087    db, equ, index                     ; data_181e
-2913:4F89    db, equ, index                     ; data_182e
+2913:4087    db, equ, index                     ; data_180e
+2913:4F89    db, equ, index                     ; data_181e
 2913:4F8A    dw, equ, index     dest_seg_e      Destination segment for copy
-2913:4F8C    db, equ, index                     ; data_184e
+2913:4F8C    db, equ, index                     ; data_183e
 2913:4F8D    dd, equ, index     orig_int8_e
 2913:4F91    dd, equ, index     orig_int9_e
 2913:4F95    db, equ, index     kbdin_key_e     Updated by kbd int on keydn
 2913:4F96    db, equ, index     lives_e
 2913:4F97    dw, equ, index     fuel_level_e
 2913:4F99    db, equ, index     fuel_disp_e
-2913:4F9A    db, equ, index                     ; data_186e
-2913:4F9B    db, equ, index                     ; data_187e
-2913:4FC5    db, equ, index                     ; data_188e
-2913:4FEF    db, equ, index                     ; data_189e
-2913:5019    db, equ, index                     ; data_190e
+2913:4F9A    db, equ, index                     ; data_185e
+2913:4F9B    db, equ, index                     ; data_186e
+2913:4FC5    db, equ, index                     ; data_187e
+2913:4FEF    db, equ, index                     ; data_188e
+2913:5019    db, equ, index                     ; data_189e
 2913:5043    db, equ, index     coll_flags1_e
-2913:5063    db, equ, index                     ; data_191e
-2913:506D    db, equ, index                     ; data_192e
-2913:5097    db, equ, index                     ; data_193e
+2913:5063    db, equ, index                     ; data_190e
+2913:506D    db, equ, index                     ; data_191e
+2913:5097    db, equ, index                     ; data_192e
 2913:50B7    db, equ, index     vel_magn_e
 2913:50D7    db, equ, index     ship_angle_e    0 to 7
-2913:50F7    db, equ, index                     ; data_194e
-2913:5117    db, equ, index                     ; data_195e
-2913:5137    dw, equ, index                     ; data_196e
+2913:50F7    db, equ, index                     ; data_193e
+2913:5117    db, equ, index                     ; data_194e
+2913:5137    dw, equ, index                     ; data_195e
 2913:5177    db, equ, index     gun_angle_e     0 to 7
 2913:5178    db, equ, index     vel_angle_e
-2913:5179    db, equ, index                     ; data_197e
-2913:5199    db, equ, index                     ; data_198e
-2913:51B9    db, equ, index                     ; data_199e
-2913:51D9    db, equ, index                     ; data_200e
-2913:51F9    db, equ, index                     ; data_201e
-2913:5219    db, equ, index                     ; data_202e
-2913:521A    db, equ, index                     ; data_203e
-2913:5220    db, equ, index                     ; data_204e
-2913:5226    db, equ, index                     ; data_205e
-2913:522C    db, equ, index                     ; data_206e
-2913:523E    db, equ, index                     ; data_207e
-2913:5240    db, equ, index                     ; data_208e
-2913:529D    db, equ, index                     ; data_209e
-2913:52E6    db, equ, index                     ; data_210e
-2913:52EC    db, equ, index                     ; data_211e
-2913:5300    db, equ, index                     ; data_212e
-2913:538E    db, equ, index                     ; data_213e
-2913:5394    db, equ, index                     ; data_214e
-2913:53A8    db, equ, index                     ; data_215e
-2913:5436    db, equ, index                     ; data_216e
-2913:5455    db, equ, index                     ; data_217e
-2913:545D    db, equ, index                     ; data_218e
-2913:545E    db, equ, index                     ; data_219e
-2913:545F    db, equ, index                     ; data_220e
-2913:5467    db, equ, index                     ; data_221e
-2913:5487    db, equ, index                     ; data_222e
-2913:54B8    db, equ, index                     ; data_223e
-2913:54E0    db, equ, index                     ; data_224e
-2913:5509    db, equ, index                     ; data_225e
-2913:8A04    db, equ, index                     ; data_226e
-A000:06FD    db, equ, index                     ; data_227e
-A000:0D85    db, equ, index                     ; data_228e
+2913:5179    db, equ, index                     ; data_196e
+2913:5199    db, equ, index                     ; data_197e
+2913:51B9    db, equ, index                     ; data_198e
+2913:51D9    db, equ, index                     ; data_199e
+2913:51F9    db, equ, index                     ; data_200e
+2913:5219    db, equ, index                     ; data_201e
+2913:521A    db, equ, index                     ; data_202e
+2913:5220    db, equ, index                     ; data_203e
+2913:5226    db, equ, index                     ; data_204e
+2913:522C    db, equ, index                     ; data_205e
+2913:523E    db, equ, index                     ; data_206e
+2913:5240    db, equ, index                     ; data_207e
+2913:529D    db, equ, index                     ; data_208e
+2913:52E6    db, equ, index                     ; data_209e
+2913:52EC    db, equ, index                     ; data_210e
+2913:5300    db, equ, index                     ; data_211e
+2913:538E    db, equ, index                     ; data_212e
+2913:5394    db, equ, index                     ; data_213e
+2913:53A8    db, equ, index                     ; data_214e
+2913:5436    db, equ, index                     ; data_215e
+2913:5455    db, equ, index                     ; data_216e
+2913:545D    db, equ, index                     ; data_217e
+2913:545E    db, equ, index                     ; data_218e
+2913:545F    db, equ, index                     ; data_219e
+2913:5467    db, equ, index                     ; data_220e
+2913:5487    db, equ, index                     ; data_221e
+2913:54B8    db, equ, index                     ; data_222e
+2913:54E0    db, equ, index                     ; data_223e
+2913:5509    db, equ, index                     ; data_224e
+2913:8A04    db, equ, index                     ; data_225e
+A000:06FD    db, equ, index                     ; data_226e
+A000:0D85    db, equ, index                     ; data_227e
 A000:0E59    db, equ, index     ofs_33x91_e     Offset of pixels x=33*8 y=91
-A000:0E6D    db, equ, index                     ; data_229e
-A000:0FEA    db, equ, index                     ; data_230e
-A000:2000    dw, equ, index                     ; data_231e
+A000:0E6D    db, equ, index                     ; data_228e
+A000:0FEA    db, equ, index                     ; data_229e
+A000:2000    dw, equ, index                     ; data_230e

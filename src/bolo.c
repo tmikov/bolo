@@ -90,6 +90,17 @@ static void ega_to_rgb(void) {
   } while (++ptr, --pixcnt);
 }
 
+static inline void ega_or(unsigned offset, uint8_t value, uint8_t mask) {
+  if (mask & 1)
+    g_ega_screen[0][offset] |= value;
+  if (mask & 2)
+    g_ega_screen[1][offset] |= value;
+  if (mask & 4)
+    g_ega_screen[2][offset] |= value;
+  if (mask & 8)
+    g_ega_screen[3][offset] |= value;
+}
+
 /// Write to the specified address in EGA memory, obeying the mask
 static inline void ega_write(unsigned offset, uint8_t value, uint8_t mask) {
   if (mask & 1)
@@ -103,10 +114,17 @@ static inline void ega_write(unsigned offset, uint8_t value, uint8_t mask) {
 }
 
 /// Write to the specified address in EGA memory, obeying the mask
-static inline void
+static inline unsigned
 ega_write_bytes(unsigned offset, const uint8_t *src, unsigned len, uint8_t mask) {
   while (len--)
     ega_write(offset++, *src++, mask);
+  return offset;
+}
+
+static inline unsigned ega_fill(unsigned offset, uint8_t value, unsigned len, uint8_t mask) {
+  while (len--)
+    ega_write(offset++, value, mask);
+  return offset;
 }
 
 /// "SBOL" strings are a sequence of characters terminated by a negative, using
@@ -119,10 +137,17 @@ ega_write_bytes(unsigned offset, const uint8_t *src, unsigned len, uint8_t mask)
 ///    extra icons
 typedef int8_t SBOL;
 
-#define SBOL_ZERO 0
+#define SBOL_0 0
 #define SBOL_A 10
 #define SBOL_Z 35
 #define SBOL_SPACE 37
+#define SBOL_END -1
+
+#define SB(x)                                          \
+  ((x) == ' '              ? SBOL_SPACE                \
+       : (x) <= '9'        ? (x) - '0'                 \
+       : ((x) | 32) <= 'z' ? SBOL_A + ((x) | 32) - 'a' \
+                           : -1)
 
 /// A pair of SBOL string and a screen offset.
 /// A sequence of these ends with a null string pointer.
@@ -135,6 +160,18 @@ typedef struct SBOLDesc {
 #define SPRITE_W 1
 #define SPRITE_H 7
 
+static uint8_t level;
+static uint8_t density;
+/// Score as a SBol string.
+static SBOL strb_score[7] =
+    {SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_0, SBOL_END};
+/// High score as a string
+static SBOL strb_hisco[7] =
+    {SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_SPACE, SBOL_0, SBOL_END};
+/// Level of the high score.
+static uint8_t high_level;
+/// Density of the high score
+static uint8_t high_dens;
 /// Increments every 54.94 ms
 static uint8_t time_tick;
 /// I believe this is used to keep the random generator state.
@@ -147,6 +184,7 @@ static uint8_t rnd_state[32] = {0x0B, 0xED, 0x5F, 0x8F, 0xB5, 0x3B, 0xE3, 0x73, 
 static uint8_t time_5bit;
 #define TIME_5BIT_MASK 0x1F
 
+static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
 static void draw_bolo_8x20(unsigned offset);
 static void draw_mstrs(const SBOLDesc *strings);
 static void draw_str(unsigned offset, const SBOL *str);
@@ -157,10 +195,15 @@ static uint8_t rndnum(uint8_t limit);
 static const uint8_t bmps_font_1x7[];
 static const uint8_t sprites_1x7[];
 static const uint8_t bmp_bolo_8x20[];
+static const uint8_t bmp_comp_4x31[];
 
 /// 2913:02C1                       ega_map_mask    proc    near
 static inline void ega_map_mask(uint8_t mask) {
   g_ega_mask = mask;
+}
+
+static inline void ega_set_page(uint8_t page) {
+  g_ega_page = page;
 }
 
 static inline void
@@ -171,6 +214,62 @@ draw_bmp(unsigned offset, const uint8_t *bmp, unsigned w, unsigned h, uint8_t ma
     bmp += w;
     offset += EGA_STRIDE;
   }
+}
+
+/// Clear both video pages and display page 0.
+/// 2913:04EB                       clear_vp0       proc    near
+static void clear_vp0() {
+  ega_map_mask(EGAWhite);
+  memset(g_ega_screen, 0, sizeof(g_ega_screen));
+  ega_set_page(0);
+}
+
+#define VID_OFFSET(x, y) ((y)*EGA_STRIDE + (x) / 8)
+
+/// Calculate offset in video memory
+/// 2913:0525                       vid_offset      proc    near
+static inline unsigned vid_offset(unsigned x, unsigned y) {
+  return VID_OFFSET(x, y);
+}
+/// Calculate bitmask in video memory
+/// 2913:0525                       vid_offset      proc    near
+static inline uint8_t vid_mask(unsigned x) {
+  return 0x80 >> (x % 8);
+}
+
+/// Draw a vertical line.
+/// \p seg      base offset in EGA memory
+/// \p lenm1    length  minus 1.
+/// 2913:05F5                       vert_line       proc    near
+static void vert_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1) {
+  unsigned ofs = seg + vid_offset(x, y);
+  uint8_t bits = vid_mask(x);
+  uint8_t ega_mask = g_ega_mask;
+  ++lenm1;
+  do {
+    ega_or(ofs, bits, ega_mask);
+    ofs += EGA_STRIDE;
+  } while (--lenm1);
+}
+
+/// Draw a horizontal line.
+/// 2913:0602                       horiz_line      proc    near
+static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1) {
+  unsigned ofs = seg + vid_offset(x, y);
+  uint8_t bits = vid_mask(x);
+  uint8_t ega_mask = g_ega_mask;
+  ++lenm1;
+  do {
+    if (!lenm1)
+      return;
+    ega_or(ofs, bits, ega_mask);
+    --lenm1;
+  } while (bits >>= 1);
+  ++ofs;
+  if (!lenm1)
+    return;
+  ofs = ega_fill(ofs, 0xFF, lenm1 / 8, ega_mask);
+  ega_or(ofs, 0xFF00 >> (lenm1 & 7), ega_mask);
 }
 
 /// Draw q sequence of string/offset pairs terminated with a null string ptr.
@@ -192,6 +291,13 @@ static void draw_str(unsigned offset, const SBOL *str) {
 /// 2913:1023                       draw_char_1x7   proc    near
 static void draw_char_1x7(unsigned offset, SBOL ch) {
   draw_bmp(offset, bmps_font_1x7 + (uint8_t)ch * 7, 1, 7, g_ega_mask);
+}
+
+/// Display strb_score.
+/// 2913:103A                       disp_score      proc    near
+static void disp_score() {
+  ega_map_mask(EGAYellow);
+  draw_str(VID_OFFSET(232, 44) + 1, strb_score);
 }
 
 static const SBOL data_118[] = {
@@ -231,7 +337,7 @@ static const SBOLDesc title_mstr[] =
 /// Draw title screen, wait a little or until a key
 /// 2913:1194                       title_screen    proc    near
 static void title_screen(void) {
-  ega_map_mask(8);
+  ega_map_mask(EGADarkGray);
 
   for (unsigned row = 0; row < EGA_HEIGHT / (SPRITE_H + 1); ++row) {
     for (unsigned col = 0; col != EGA_STRIDE; ++col) {
@@ -241,12 +347,93 @@ static void title_screen(void) {
           sprites_1x7 + sprite * SPRITE_H * SPRITE_W,
           SPRITE_W,
           SPRITE_H,
-          8);
+          EGADarkGray);
     }
   }
 
   draw_bolo_8x20(0x538);
   draw_mstrs(title_mstr);
+
+  // TODO: wait for 0x3C ticks or a key (which is consumed) and update
+  //       lastkey_tick
+}
+
+static const SBOL str_level[] = {SB('l'), SB('e'), SB('v'), SB('e'), SB('l'), SBOL_END};
+static const SBOL str_density[] =
+    {SB('d'), SB('e'), SB('n'), SB('s'), SB('i'), SB('t'), SB('y'), SBOL_END};
+static const SBOL str_new[] = {SB('n'), SB('e'), SB('w'), SBOL_END};
+static const SBOL str_current[] =
+    {SB('c'), SB('u'), SB('r'), SB('r'), SB('e'), SB('n'), SB('t'), SBOL_END};
+static const SBOL str_score[] = {SB('s'), SB('c'), SB('o'), SB('r'), SB('e'), SBOL_END};
+static const SBOL str_at[] = {SB('a'), SB('t'), SBOL_END};
+static const SBOL str_high[] = {SB('h'), SB('i'), SB('g'), SB('h'), SBOL_END};
+
+static SBOLDesc lsel_mstr[] = {
+    {str_high, 0x551},
+    {str_score, 0x556},
+    {str_at, 0x624},
+    {str_level, 0x560},
+    {str_density, 0x6EF},
+    {str_current, 0x0E3B},
+    {str_level, 0x0D7D},
+    {str_density, 0x0F0C},
+    {str_new, 0x1685},
+    {str_level, 0x15C3},
+    {str_density, 0x1752},
+    {NULL}};
+
+/// Draw the hud to the right
+/// 2913:11F9                       draw_hud        proc    near
+static void draw_hud() {
+  clear_vp0();
+
+  unsigned pageOfs = 0;
+  do {
+    draw_bolo_8x20(0x1D);
+    ega_map_mask(EGAWhite);
+
+    draw_rect(pageOfs, 0xE7, 0x1C, 0x40, 0x1A);
+    draw_rect(pageOfs, 0xE7, 0x47, 0x40, 0x0F);
+    draw_rect(pageOfs, 0xE7, 0x7E, 0x40, 0x3D);
+    draw_rect(pageOfs, 0xE7, 0x5B, 0x0F, 0x0F);
+    draw_rect(pageOfs, 0xE7 + 0x0F, 0x5B, 0x0F, 0x0F);
+    draw_rect(pageOfs, 0xE7 + 0x0F, 0x5B + 0x0F, 0x0F, 0x0F);
+    draw_rect(pageOfs, 0xE7, 0x5B + 0x0F, 0x0F, 0x0F);
+    draw_bmp(pageOfs + VID_OFFSET(264, 91), bmp_comp_4x31, 4, 31, EGAWhite);
+  } while ((pageOfs += EGA_PAGE_SIZE) != EGA_PAGE_SIZE * 2);
+
+  disp_score();
+  draw_str(VID_OFFSET(240, 32), str_score);
+}
+
+/// Draw level selection on the left.
+/// 2913:1263                       draw_levsel     proc    near
+static void draw_levsel() {
+  ega_map_mask(EGAWhite);
+  draw_rect(0, 0x02, 0x1C, 0xCC, 0x1C);
+  draw_rect(0, 0x02, 0x50, 0xCC, 0x1C);
+  draw_rect(0, 0x02, 0x85, 0xCC, 0x1C);
+
+  ega_map_mask(EGAHighCyan);
+  draw_mstrs(lsel_mstr);
+
+  ega_map_mask(EGAYellow);
+  draw_char_1x7(VID_OFFSET(168, 86), (SBOL)(level + 1));
+  draw_char_1x7(VID_OFFSET(168, 96), (SBOL)(density + 1));
+  draw_str(VID_OFFSET(16, 44), strb_hisco);
+  draw_char_1x7(VID_OFFSET(184, 34), (SBOL)(high_level + 1));
+  draw_char_1x7(VID_OFFSET(184, 44), (SBOL)(high_dens + 1));
+}
+
+/// Draw a rectangle with 1-pixel lines.
+/// \p wm1  width - 1
+/// \p hm1  height - 1
+/// 2913:1321                       draw_rect       proc    near
+static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1) {
+  horiz_line(seg, x, y + hm1, wm1);
+  horiz_line(seg, x, y, wm1);
+  vert_line(seg, x, y, hm1);
+  vert_line(seg, x + wm1, y, hm1);
 }
 
 /// Draw the 8x20 BOLO bitmap at the specified offset using bright green color.
@@ -290,6 +477,7 @@ static uint8_t rndnum(uint8_t limit) {
   return res;
 }
 
+/// "BOLO"
 static const uint8_t bmp_bolo_8x20[] = {
     // 8 x 20 (160 bytes)
     0xff, 0xe0, 0x07, 0xc0, 0x3c, 0x00, 0x0f, 0x80, 0xff, 0xf0, 0x1f, 0xf0, 0x3c, 0x00, 0x3f, 0xe0,
@@ -304,7 +492,20 @@ static const uint8_t bmp_bolo_8x20[] = {
     0xff, 0xf0, 0x1f, 0xf0, 0x3f, 0xfc, 0x3f, 0xe0, 0xff, 0xe0, 0x07, 0xc0, 0x3f, 0xfc, 0x0f, 0x80,
 };
 
-// 2913:0E1D bmps_font_1x7
+/// Compass background.
+static const uint8_t bmp_comp_4x31[] = {
+    // 4 x 31 (124 bytes)
+    0x7f, 0xff, 0xff, 0xff, 0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01,
+    0x40, 0x00, 0x80, 0x01, 0x40, 0x00, 0x80, 0x01, 0x42, 0x00, 0x80, 0x21, 0x41, 0x00, 0x00, 0x41,
+    0x40, 0x80, 0x00, 0x81, 0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01,
+    0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x80, 0x01, 0x47, 0x01, 0xc0, 0x71,
+    0x40, 0x00, 0x80, 0x01, 0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01,
+    0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01, 0x40, 0x80, 0x00, 0x81,
+    0x41, 0x00, 0x80, 0x41, 0x42, 0x00, 0x80, 0x21, 0x40, 0x00, 0x80, 0x01, 0x40, 0x00, 0x00, 0x01,
+    0x40, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x01, 0x7f, 0xff, 0xff, 0xff,
+};
+
+// 43 SBol characters 1x7 each.
 static const uint8_t bmps_font_1x7[] = {
     // 1 x 301 (301 bytes)
     0x3c, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3c, 0x18, 0x78, 0x18, 0x18, 0x18, 0x18, 0x7e, 0x3c, 0x66,
@@ -375,6 +576,8 @@ static void bolo_init(void) {
   });
 
   title_screen();
+  draw_hud();
+  draw_levsel();
   ega_to_rgb();
 
   sg_update_image(
