@@ -1,3 +1,12 @@
+// bolo - public domain Tzvetan Mikov 2021
+// A modern C/C++ reimplementation of the classic Apple II Game BOLO (1982)
+// https://en.wikipedia.org/wiki/Bolo_(1982_video_game)
+//
+// The reimplementation is based on the unofficial 1993 IBM PC port of the
+// original game by Mr.Rm. Unfortunately almost nothing is known about that
+// port, or the mysterious "Mr.Rm", but it appears to be a completely faithful
+// reimplementation.
+
 #include "sokol_app.h"
 #include "sokol_gfx.h"
 #include "sokol_glue.h"
@@ -423,7 +432,7 @@ static void draw_ship(unsigned pageSeg) {
   }
 }
 
-/// Draw q sequence of string/offset pairs terminated with a null string ptr.
+/// Draw a sequence of string/offset pairs terminated with a null string ptr.
 /// 2913:0FFE                       draw_mstrs      proc    near
 static void draw_mstrs(const SBOLDesc *strings) {
   for (; strings->str; ++strings)
