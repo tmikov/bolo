@@ -63,7 +63,7 @@ end
         di = tmp1_buf_e + x + y*64
         ax = sext(*di)
         zf = test(ax)
-02                                 tmp2_readxy
+02                                 maze_readxy
          
         input: 
                 dl: x
@@ -72,8 +72,8 @@ end
                 si: buffer address
                 al: value in buffer
                 zf: test on al
-        Read from the byte array tmp2_buf_ei[64][64] with 64b stride.
-        si = tmp2_buf_e + x + y*64
+        Read from the byte array maze_buf_ei[64][64] with 64b stride.
+        si = maze_buf_e + x + y*64
         al = *si
         zf = test(al)
 03                                 draw_gmaze_22x7
@@ -214,7 +214,10 @@ end
         I am not sure but I think this routine shuffles the random generator
         state while also taking the current time into consideration.
         The result is masked with AX-1.
-17                                 tmp2_rnd_xy
-        Output: DL: x, DH: y, AL: tmp2_buf[x,y]
-        Generate random numbers x=[1..61], y=[3..60] until tmp2_buf[x,y] >= 0.
+17                                 maze_rnd_xy
+        Output: 
+                DL: x, DH: y, i
+                AL: maze_buf[x,y]
+                SI: address in buffer
+        Generate random numbers x=[1..61], y=[3..60] until maze_buf[x,y] >= 0.
 end

@@ -103,7 +103,7 @@ static uint8_t time_5bit;
 #define TIME_5BIT_MASK 0x1F
 
 static uint8_t tmp1_buf[64][64];
-static uint8_t tmp2_buf[64][64];
+static uint8_t maze_buf[64][64];
 
 /// Destination segment for graphics writes.
 static unsigned dest_seg; // 4F8Ah
@@ -127,14 +127,21 @@ static void draw_char_1x7(unsigned offset, SBOL ch);
 static uint8_t rnd_update(uint8_t limit);
 static uint8_t rndnum(uint8_t limit);
 
-typedef struct XYPair {
+/// A tuple containing x, y, and corresponding pointer.
+typedef struct {
   uint8_t x, y;
-} XYPair;
-static struct XYPair tmp2_rnd_xy();
+  uint8_t *ptr;
+} XYPtr;
+static XYPtr maze_rnd_xy();
 
-static inline uint8_t tmp2_readxy(uint8_t x, uint8_t y) {
-  return tmp2_buf[y][x];
-}
+typedef struct {
+  uint8_t *ptr;
+  uint8_t val;
+} ValPtr;
+
+/// Read from maze, returning value and address
+/// 2913:2F3C                       maze_readxy     proc    near
+ValPtr maze_readxy(unsigned x, unsigned y);
 
 static const uint8_t bmps_font_1x7[];
 static const uint8_t bmp_gmaze_22x7[];
@@ -270,7 +277,7 @@ static inline uint8_t *mempset(uint8_t *dst, uint8_t value, unsigned len) {
   return dst + len;
 }
 
-/// Draw generating maze, clear tmp1_buf, init tmp2_buf
+/// Draw generating maze, clear tmp1_buf, init maze_buf
 /// 2913:0321                       init_maze       proc    near
 static void init_maze() {
   ega_map_mask(EGAWhite);
@@ -299,7 +306,7 @@ static void init_maze() {
   // 02 - bottom boundary
   // 0f - middle
 
-  uint8_t *b2 = tmp2_buf[0];
+  uint8_t *b2 = maze_buf[0];
   // row 0, 1, 2:0
   b2 = mempset(b2, 0, 2 * 64 + 1);
   // row [2:1..2:61]
@@ -321,11 +328,11 @@ static void init_maze() {
   b2 = mempset(b2, 2, 64 - 1 - 2);
   // row [62:62..63:63]
   b2 = mempset(b2, 0, 2 + 64 * 2);
-  assert(b2 == tmp2_buf[0] + sizeof(tmp2_buf) && "b2 must cover tmp2_buf");
+  assert(b2 == maze_buf[0] + sizeof(maze_buf) && "b2 must cover maze_buf");
 
   // Fill the middle sides: 01, 00 on the right, followed by 04 on the left.
   // Row 3:62
-  b2 = tmp2_buf[0] + 3 * 64 + 62;
+  b2 = maze_buf[0] + 3 * 64 + 62;
   unsigned cnt = 57;
   do {
     b2[0] = 1;
@@ -339,12 +346,134 @@ static void init_maze() {
 static void dump_maze() {
   for (unsigned y = 0; y != 64; ++y) {
     for (unsigned x = 0; x != 64; ++x) {
-      printf("%02x", tmp2_buf[y][x]);
+      printf("%02x", maze_buf[y][x]);
     }
     printf("\n");
   }
 }
 #endif
+
+/// Populate the maze using the random generator.
+/// 2913:0377                       gen_maze        proc    near
+static void gen_maze() {
+  init_maze();
+
+  unsigned cnt = 58 * 61 - 1;
+
+  XYPtr xyp = maze_rnd_xy();
+  unsigned x = xyp.x;
+  unsigned y = xyp.y;
+  uint8_t *ptr = xyp.ptr;
+
+  for (;;) {
+    // Bits are set here if we encounter a wall in each direction.
+    uint8_t wallMask = 0;
+
+    if (y != 60 && *(ptr + 64) >= 0x0F)
+      wallMask |= 8;
+    if (x != 61 && *(ptr + 1) >= 0x0F)
+      wallMask |= 4;
+    if (y >= 4 && *(ptr - 64) >= 0x0F)
+      wallMask |= 2;
+    if (x >= 2 && *(ptr - 1) >= 0x0F)
+      wallMask |= 1;
+
+    if (wallMask == 0) {
+      do {
+        ++x;
+        if (x == 62) {
+          ++y;
+          if (y == 61)
+            y = 3;
+          x = 1;
+        }
+        ValPtr valPtr = maze_readxy(x, y);
+        ptr = valPtr.ptr;
+      } while (*ptr == 0x0F);
+
+      continue;
+    }
+
+    static const uint8_t tab_gen_maze[15 * 4] = {
+        04, 04, 04, 04, 03, 03, 03, 03, 03, 04, 04, 03, 02, 02, 02, 02, 04, 02, 02, 04,
+        02, 03, 03, 02, 02, 03, 04, 00, 01, 01, 01, 01, 01, 04, 01, 04, 03, 01, 01, 03,
+        01, 00, 03, 04, 02, 01, 01, 02, 04, 02, 00, 01, 03, 01, 02, 00, 01, 02, 03, 04,
+    };
+    const uint8_t *tabPtr = tab_gen_maze + (wallMask - 1) * 4;
+    unsigned rndVal;
+    do
+      rndVal = tabPtr[rnd_update(4)];
+    while (rndVal == 0);
+    switch (rndVal) {
+    case 1:
+      *ptr &= 7;
+      ptr += 64;
+      ++y;
+      *ptr &= 0x0D;
+      break;
+    case 2:
+      *ptr &= 0x0B;
+      ++ptr;
+      ++x;
+      *ptr &= 0x0E;
+      break;
+    case 3:
+      *ptr &= 0x0D;
+      ptr -= 64;
+      --y;
+      *ptr &= 7;
+      break;
+    case 4:
+      *ptr &= 0x0E;
+      --ptr;
+      --x;
+      *ptr &= 0x0B;
+      break;
+    default:
+      assert(false && "unreachable");
+    }
+
+    if (--cnt == 0)
+      break;
+  }
+
+  // Remove walls from the maze. The number of iterations depends on the density.
+  static const unsigned rep_table[5] = {0x1B8A, 0x1608, 0x1086, 0x0B04, 0x0582};
+  unsigned rep = rep_table[density];
+
+  do {
+    xyp = maze_rnd_xy();
+    x = xyp.x;
+    y = xyp.y;
+    ptr = xyp.ptr;
+    switch (rnd_update(4)) {
+    case 0:
+      if (y != 60) {
+        *ptr &= 7;
+        *(ptr + 64) &= 0x0D;
+      }
+      break;
+    case 1:
+      if (x != 61) {
+        *ptr &= 0x0B;
+        *(ptr + 1) &= 0x0E;
+      }
+      break;
+    case 2:
+      if (y != 3) {
+        *ptr &= 0x0D;
+        *(ptr - 64) &= 7;
+      }
+      break;
+    case 3:
+      if (x != 1) {
+        *ptr &= 0x0E;
+        *(ptr - 1) &= 0x0B;
+      }
+      break;
+    }
+  } while (--rep);
+}
 
 /// Clear both video pages and display page 0.
 /// 2913:04EB                       clear_vp0       proc    near
@@ -639,20 +768,28 @@ static uint8_t rndnum(uint8_t limit) {
   return res;
 }
 
-/// Output: DL: x, DH: y, AL: tmp2_buf[x,y]
-/// Generate random numbers x=[1..61], y=[3..60] until tmp2_buf[x,y] >= 0.
-/// 2913:2F18                       tmp2_rnd_xy     proc    near
-static XYPair tmp2_rnd_xy() {
+/// Output: DL: x, DH: y, AL: maze_buf[x,y]
+/// Generate random numbers x=[1..61], y=[3..60] until maze_buf[x,y] >= 0.
+/// 2913:2F18                       maze_rnd_xy     proc    near
+static XYPtr maze_rnd_xy() {
   uint8_t x, y;
+  ValPtr valPtr;
   do {
     do
       x = rnd_update(64);
     while (x >= 62 || x == 0);
     do
       y = rnd_update(64);
-    while (y >= 61 || x < 3);
-  } while (tmp2_readxy(x, y) & 0x80);
-  return (XYPair){.x = x, .y = y};
+    while (y >= 61 || y < 3);
+    valPtr = maze_readxy(x, y);
+  } while (valPtr.val & 0x80);
+  return (XYPtr){.x = x, .y = y, .ptr = valPtr.ptr};
+}
+
+/// Read from maze, returning value and address
+/// 2913:2F3C                       maze_readxy     proc    near
+ValPtr maze_readxy(unsigned x, unsigned y) {
+  return (ValPtr){.ptr = &maze_buf[y][x], .val = maze_buf[y][x]};
 }
 
 /// "BOLO"
@@ -796,7 +933,7 @@ static void bolo_init(void) {
   clear_vp0();
   draw_hud();
   draw_levsel();
-  init_maze();
+  gen_maze();
   dump_maze();
   for (unsigned i = 0; i != 8; ++i) {
     ship_angle = i;
