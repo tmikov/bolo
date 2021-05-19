@@ -56,7 +56,16 @@ The finished application will work on major operating systems and web (using Web
 
 Current Status
 --------------
-In just a couple of days we have been able to re-implement the title screen, the level-selection screen, the main ship rendering, and some other stuff. There is working code in the [src/](https://github.com/tmikov/bolo/tree/master/src) directory.
+In just a couple of days we have been able to re-implement:
+- title screen 
+- level-selection screen 
+- main ship rendering 
+- maze rendering 
+- some other stuff. 
+
+There is working code in the [src/](https://github.com/tmikov/bolo/tree/master/src) directory.
+  
+To exercize the working code paths, the app is allows moving the ship with arrow keys around the maze with collision detection.
 
 Note that when we say "re-implement", we don't mean recreate the output (which in this case could have been accomplished by just rendering a bitmap), but rather port the *original* logic to C and get that logic do the work. For example, this is the code that draws multiple strings to the screen:
 ```c
@@ -66,20 +75,13 @@ static void draw_mstrs(const SBOLDesc *strings) {
     draw_str(strings->offset, strings->str);
 }
 ```
-Admittedly, the title screens aren't technically very exciting, but they required a bit of foundational work. Also, nothing can describe the satisfaction of seeing for the first time the C code render an image looking exactly like the original.
-
 Here are a couple of screenshots (note the blurriness caused by OpenGL filering when upscaling from the native 320x200).
 
-### Title
-
-![](https://raw.github.com/tmikov/bolo/master/images/title.jpg)
-
 ### Level selection
-
 ![](https://raw.github.com/tmikov/bolo/master/images/levsel.png)
 
-### Ship
-![](https://raw.github.com/tmikov/bolo/master/images/ship.png)
+### Maze and Ship
+![](https://raw.github.com/tmikov/bolo/master/images/maze.png)
 
 ### Web Platform
 

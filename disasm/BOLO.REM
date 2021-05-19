@@ -66,13 +66,17 @@ end
 02                                 maze_readxy
          
         input: 
-                dl: x
-                dh: y
+                dl: signed x
+                dh: signed y
         output: 
                 si: buffer address
                 al: value in buffer
                 zf: test on al
         Read from the byte array maze_buf_ei[64][64] with 64b stride.
+        Note that the values are treated as signed, so negative coords
+        kind-of work. This is deliberate because maze rendering does 
+        occasionally use negative coords, even though they are not
+        displayed.
         si = maze_buf_e + x + y*64
         al = *si
         zf = test(al)

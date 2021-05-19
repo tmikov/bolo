@@ -102,11 +102,27 @@ static uint8_t rnd_state[32] = {0x0B, 0xED, 0x5F, 0x8F, 0xB5, 0x3B, 0xE3, 0x73, 
 static uint8_t time_5bit;
 #define TIME_5BIT_MASK 0x1F
 
-static uint8_t tmp1_buf[64][64];
-static uint8_t maze_buf[64][64];
+#define MAZE_WIDTH 64
+#define MAZE_HEIGHT 64
+#define MAZE_STRIDE 64
+
+static uint8_t tmp1_buf[MAZE_HEIGHT][MAZE_WIDTH];
+static uint8_t maze_buf[MAZE_HEIGHT][MAZE_WIDTH];
 
 /// Destination segment for graphics writes.
 static unsigned dest_seg; // 4F8Ah
+
+/// The size in pixels of one cell.
+#define CELL_SIZE 38
+
+/// The cell of the ship.
+static uint8_t ship_cellx = 1;
+/// The cell of the ship.
+static uint8_t ship_celly = 3;
+/// Offset of the ship within the cell.
+static int8_t ship_ofsx = CELL_SIZE / 2;
+/// Offset of the ship within the cell.
+static int8_t ship_ofsy = CELL_SIZE / 2;
 
 static uint8_t coll_flags1; // 5043h
 /// Ship velocity magnitude [0..5]
@@ -121,6 +137,8 @@ static uint8_t vel_angle; // 5178h
 
 static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
 static void draw_bolo_8x20(unsigned offset);
+static void vert_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
+static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
 static void draw_mstrs(const SBOLDesc *strings);
 static void draw_str(unsigned offset, const SBOL *str);
 static void draw_char_1x7(unsigned offset, SBOL ch);
@@ -138,10 +156,7 @@ typedef struct {
   uint8_t *ptr;
   uint8_t val;
 } ValPtr;
-
-/// Read from maze, returning value and address
-/// 2913:2F3C                       maze_readxy     proc    near
-ValPtr maze_readxy(unsigned x, unsigned y);
+static ValPtr maze_readxy(int8_t x, int8_t y);
 
 static const uint8_t bmps_font_1x7[];
 static const uint8_t bmp_gmaze_22x7[];
@@ -150,8 +165,6 @@ static const uint8_t bmp_bolo_8x20[];
 static const uint8_t bmp_comp_4x31[];
 static const uint8_t bmps_gun_1x7[8][7];
 static const uint8_t bmps_ship_1x7[8][7];
-static const uint8_t *const gun_offs[8];
-static const uint8_t *const ship_offs[8];
 
 typedef struct RGBA8 {
   uint8_t r, g, b, a;
@@ -308,16 +321,16 @@ static void init_maze() {
 
   uint8_t *b2 = maze_buf[0];
   // row 0, 1, 2:0
-  b2 = mempset(b2, 0, 2 * 64 + 1);
+  b2 = mempset(b2, 0, 2 * MAZE_WIDTH + 1);
   // row [2:1..2:61]
-  b2 = mempset(b2, 8, 64 - 1 - 2);
+  b2 = mempset(b2, 8, MAZE_WIDTH - 1 - 2);
   // row 2:62, 2:63
   *b2++ = 0;
   *b2++ = 0;
   // row 3:0
   *b2++ = 4;
   // row [3:1 .. 61:61]
-  b2 = mempset(b2, 0x0F, 63 + 56 * 64 + 62);
+  b2 = mempset(b2, 0x0F, MAZE_WIDTH - 1 + (MAZE_HEIGHT - 8) * MAZE_WIDTH + MAZE_WIDTH - 2);
   // row 61:62
   *b2++ = 1;
   // row 61:63
@@ -325,27 +338,27 @@ static void init_maze() {
   // row 62:0
   *b2++ = 0;
   // row [62:1..62:61]
-  b2 = mempset(b2, 2, 64 - 1 - 2);
+  b2 = mempset(b2, 2, MAZE_WIDTH - 1 - 2);
   // row [62:62..63:63]
-  b2 = mempset(b2, 0, 2 + 64 * 2);
+  b2 = mempset(b2, 0, 2 + MAZE_WIDTH * 2);
   assert(b2 == maze_buf[0] + sizeof(maze_buf) && "b2 must cover maze_buf");
 
   // Fill the middle sides: 01, 00 on the right, followed by 04 on the left.
   // Row 3:62
-  b2 = maze_buf[0] + 3 * 64 + 62;
-  unsigned cnt = 57;
+  b2 = maze_buf[0] + 3 * MAZE_WIDTH + MAZE_WIDTH - 2;
+  unsigned cnt = MAZE_HEIGHT - 7;
   do {
     b2[0] = 1;
     b2[1] = 0;
     b2[2] = 4;
-    b2 += 64;
+    b2 += MAZE_WIDTH;
   } while (--cnt);
 }
 
 #ifndef NDEBUG
 static void dump_maze() {
-  for (unsigned y = 0; y != 64; ++y) {
-    for (unsigned x = 0; x != 64; ++x) {
+  for (unsigned y = 0; y != MAZE_HEIGHT; ++y) {
+    for (unsigned x = 0; x != MAZE_WIDTH; ++x) {
       printf("%02x", maze_buf[y][x]);
     }
     printf("\n");
@@ -369,11 +382,11 @@ static void gen_maze() {
     // Bits are set here if we encounter a wall in each direction.
     uint8_t wallMask = 0;
 
-    if (y != 60 && *(ptr + 64) >= 0x0F)
+    if (y != 60 && *(ptr + MAZE_STRIDE) >= 0x0F)
       wallMask |= 8;
     if (x != 61 && *(ptr + 1) >= 0x0F)
       wallMask |= 4;
-    if (y >= 4 && *(ptr - 64) >= 0x0F)
+    if (y >= 4 && *(ptr - MAZE_STRIDE) >= 0x0F)
       wallMask |= 2;
     if (x >= 2 && *(ptr - 1) >= 0x0F)
       wallMask |= 1;
@@ -407,7 +420,7 @@ static void gen_maze() {
     switch (rndVal) {
     case 1:
       *ptr &= 7;
-      ptr += 64;
+      ptr += MAZE_STRIDE;
       ++y;
       *ptr &= 0x0D;
       break;
@@ -419,7 +432,7 @@ static void gen_maze() {
       break;
     case 3:
       *ptr &= 0x0D;
-      ptr -= 64;
+      ptr -= MAZE_STRIDE;
       --y;
       *ptr &= 7;
       break;
@@ -450,7 +463,7 @@ static void gen_maze() {
     case 0:
       if (y != 60) {
         *ptr &= 7;
-        *(ptr + 64) &= 0x0D;
+        *(ptr + MAZE_STRIDE) &= 0x0D;
       }
       break;
     case 1:
@@ -462,7 +475,7 @@ static void gen_maze() {
     case 2:
       if (y != 3) {
         *ptr &= 0x0D;
-        *(ptr - 64) &= 7;
+        *(ptr - MAZE_STRIDE) &= 7;
       }
       break;
     case 3:
@@ -493,6 +506,96 @@ static inline unsigned vid_offset(unsigned x, unsigned y) {
 /// 2913:0525                       vid_offset      proc    near
 static inline uint8_t vid_mask(unsigned x) {
   return 0x80 >> (x % 8);
+}
+
+/// Draw the maze around the ship at coordinates
+/// ship_cellx:ship_ofsx, ship_celly:ship_ofsy.
+/// 2913:054E                       sub_10          proc    near
+static void draw_maze(unsigned seg) {
+  ega_map_mask(EGAWhite);
+  // Cell coordinates of the top left screen corner. Note that these can
+  // get negative (by design, since there is only one extra cell on the left
+  // in the map).
+  int screenCellX, screenCellY;
+  // Pixel offset of the top left screen corner relative to the top left
+  // screen cell.
+  unsigned screenOfsX, screenOfsY;
+  /// Pointer to the top left screen corner cell in the maze.
+  const uint8_t *screenCellPtr;
+
+  // Calculate topmost visible cell: 2 cells + 19 pixels from center.
+  screenCellY = ship_celly - 3;
+  screenOfsY = 19 - ship_ofsy;
+  if ((int)screenOfsY < 0) {
+    screenOfsY += CELL_SIZE;
+    ++screenCellY;
+  }
+
+  // Calculate leftmost visible cell: 2 cells + 31 pixels from center.
+  screenCellX = ship_cellx - 3;
+  screenOfsX = 31 - ship_ofsx;
+  if ((int)screenOfsX < 0) {
+    screenOfsX += CELL_SIZE;
+    ++screenCellX;
+  }
+
+  ValPtr valPtr = maze_readxy(screenCellX, screenCellY);
+  screenCellPtr = valPtr.ptr;
+
+  // Draw horizontal lines.
+  const uint8_t *mazePtr = screenCellPtr;
+  unsigned wallLength = screenOfsX;
+  unsigned ofsX = 0;
+  if (wallLength == 0) {
+    wallLength = CELL_SIZE;
+    ++mazePtr;
+  }
+  do {
+    unsigned curY = screenOfsY;
+    const uint8_t *curMazePtr = mazePtr;
+    do {
+      if (*curMazePtr & 8)
+        horiz_line(seg, ofsX, curY, wallLength);
+
+      curY += CELL_SIZE;
+      curMazePtr += MAZE_STRIDE;
+    } while (curY < 192);
+
+    ofsX += wallLength;
+    wallLength = CELL_SIZE;
+    if (ofsX >= 170)
+      wallLength = 208 - ofsX;
+
+    ++mazePtr;
+  } while (ofsX < 208);
+
+  // Draw vertical lines.
+  mazePtr = screenCellPtr;
+  wallLength = screenOfsY;
+  unsigned ofsY = 0;
+  if (wallLength == 0) {
+    wallLength = CELL_SIZE;
+    mazePtr += MAZE_STRIDE;
+  }
+  do {
+    unsigned curX = screenOfsX;
+    const uint8_t *curMazePtr = mazePtr;
+    do {
+      if (*curMazePtr & 4)
+        vert_line(seg, curX, ofsY, wallLength);
+
+      curX += CELL_SIZE;
+      ++curMazePtr;
+    } while (curX <= 205);
+
+    ofsY += wallLength;
+    wallLength = CELL_SIZE;
+
+    if (ofsY >= 154)
+      wallLength = 192 - ofsY;
+
+    mazePtr += MAZE_STRIDE;
+  } while (ofsY <= 191);
 }
 
 /// Draw a vertical line.
@@ -776,19 +879,23 @@ static XYPtr maze_rnd_xy() {
   ValPtr valPtr;
   do {
     do
-      x = rnd_update(64);
-    while (x >= 62 || x == 0);
+      x = rnd_update(MAZE_WIDTH);
+    while (x >= MAZE_WIDTH - 2 || x == 0);
     do
-      y = rnd_update(64);
-    while (y >= 61 || y < 3);
+      y = rnd_update(MAZE_HEIGHT);
+    while (y >= MAZE_HEIGHT - 3 || y < 3);
     valPtr = maze_readxy(x, y);
   } while (valPtr.val & 0x80);
   return (XYPtr){.x = x, .y = y, .ptr = valPtr.ptr};
 }
 
-/// Read from maze, returning value and address
+/// Read from maze, returning value and address.
+/// Note that the parameters are deliberately signed. draw_maze occasionally
+/// generates negative coords, and they need to work correctly.
+/// TODO: change the parameters to int and have the caller take care of the
+///       expansion.
 /// 2913:2F3C                       maze_readxy     proc    near
-ValPtr maze_readxy(unsigned x, unsigned y) {
+static ValPtr maze_readxy(int8_t x, int8_t y) {
   return (ValPtr){.ptr = &maze_buf[y][x], .val = maze_buf[y][x]};
 }
 
@@ -927,24 +1034,25 @@ static void bolo_init(void) {
       .label = "ega_image",
   });
 
-  title_screen();
-  draw_hud();
-  draw_levsel();
-  clear_vp0();
-  draw_hud();
-  draw_levsel();
+  // title_screen();
+  // draw_hud();
+  // draw_levsel();
+  // clear_vp0();
+  // draw_hud();
+  // draw_levsel();
+  density = 4;
   gen_maze();
-  dump_maze();
-  for (unsigned i = 0; i != 8; ++i) {
-    ship_angle = i;
-    gun_angle = i;
-    draw_ship(i * 2);
-  }
-  ega_to_rgb();
+  // clear_vp0();
+  // draw_hud();
+  // draw_maze(0);
+  // gun_angle = 3;
+  // ship_angle = 3;
+  // draw_ship(0);
+  // ega_to_rgb();
 
-  sg_update_image(
-      state.bind.fs_images[SLOT_tex],
-      &(sg_image_data){.subimage[0][0] = {.ptr = g_rgb_screen, .size = sizeof(g_rgb_screen)}});
+  // sg_update_image(
+  //     state.bind.fs_images[SLOT_tex],
+  //     &(sg_image_data){.subimage[0][0] = {.ptr = g_rgb_screen, .size = sizeof(g_rgb_screen)}});
 
   /*
    * Triangle strip:
@@ -978,10 +1086,53 @@ static void bolo_init(void) {
   });
 }
 
+static int ship_dx = 0;
+static int ship_dy = 0;
+
+static void render_test_frame(void) {
+  ship_ofsx += ship_dx;
+  if (ship_ofsx < 0) {
+    ship_ofsx += 38;
+    ship_cellx -= 1;
+  } else if (ship_ofsx >= 38) {
+    ship_ofsx -= 38;
+    ship_cellx += 1;
+  }
+  ship_ofsy += ship_dy;
+  if (ship_ofsy < 0) {
+    ship_ofsy += 38;
+    ship_celly -= 1;
+  } else if (ship_ofsy >= 38) {
+    ship_ofsy -= 38;
+    ship_celly += 1;
+  }
+  clear_vp0();
+  draw_hud();
+  draw_maze(0);
+  draw_ship(0);
+  ega_to_rgb();
+
+  if (coll_flags1) {
+    coll_flags1 = 0;
+    ship_cellx = 1;
+    ship_celly = 3;
+    ship_ofsx = ship_ofsy = CELL_SIZE / 2;
+    ship_dx = 0;
+    ship_dy = 0;
+  }
+}
+
 static void bolo_frame(void) {
+  render_test_frame();
+
   sg_begin_default_pass(&state.pass_action, sapp_width(), sapp_height());
   sg_apply_pipeline(state.pip);
   sg_apply_bindings(&state.bind);
+
+  sg_update_image(
+      state.bind.fs_images[SLOT_tex],
+      &(sg_image_data){.subimage[0][0] = {.ptr = g_rgb_screen, .size = sizeof(g_rgb_screen)}});
+
   sg_draw(0, 4, 1);
   sg_end_pass();
   sg_commit();
@@ -991,6 +1142,55 @@ static void bolo_cleanup(void) {
   sg_shutdown();
 }
 
+static int angleVel[][2] = {
+    {0, -1},
+    {1, -1},
+    {1, 0},
+    {1, 1},
+    {0, 1},
+    {-1, 1},
+    {-1, 0},
+    {-1, -1},
+};
+static bool keys[512];
+static void bolo_event(const sapp_event *ev) {
+  if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
+    keys[ev->key_code] = true;
+  } else if (ev->type == SAPP_EVENTTYPE_KEY_UP) {
+    keys[ev->key_code] = false;
+  }
+  if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
+    switch (ev->key_code) {
+    case SAPP_KEYCODE_1:
+      gun_angle = (gun_angle - 1) & 7;
+      break;
+    case SAPP_KEYCODE_2:
+      gun_angle = (gun_angle + 1) & 7;
+      break;
+    case SAPP_KEYCODE_LEFT:
+      ship_angle = (ship_angle - 1) & 7;
+      gun_angle = (gun_angle - 1) & 7;
+      break;
+    case SAPP_KEYCODE_RIGHT:
+      ship_angle = (ship_angle + 1) & 7;
+      gun_angle = (gun_angle + 1) & 7;
+      break;
+    default:
+      break;
+    }
+  }
+
+  if (keys[SAPP_KEYCODE_UP]) {
+    ship_dx = angleVel[ship_angle][0];
+    ship_dy = angleVel[ship_angle][1];
+  } else if (keys[SAPP_KEYCODE_DOWN]) {
+    ship_dx = -angleVel[ship_angle][0];
+    ship_dy = -angleVel[ship_angle][1];
+  } else {
+    ship_dx = ship_dy = 0;
+  }
+}
+
 sapp_desc sokol_main(int argc, char *argv[]) {
   (void)argc;
   (void)argv;
@@ -998,7 +1198,7 @@ sapp_desc sokol_main(int argc, char *argv[]) {
       .init_cb = bolo_init,
       .frame_cb = bolo_frame,
       .cleanup_cb = bolo_cleanup,
-      //.event_cb = __dbgui_event,
+      .event_cb = bolo_event,
       .width = EGA_WIDTH * 2,
       .height = EGA_HEIGHT * 2,
       .window_title = "Bolo",
