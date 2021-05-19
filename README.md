@@ -9,16 +9,34 @@ Originally forked from https://github.com/begoon/bolo.
 
 ![](https://raw.github.com/tmikov/bolo/master/bolo-screenshot.png)
 
-The project is based on the unofficial IBM PC port of the original game by MrRm, 1993.
+Current Status
+--------------
+In just a couple of days we have been able to re-implement:
+- title screen
+- level-selection screen
+- main ship rendering
+- maze rendering
+- some other stuff.
 
-We chose the MS DOS port instead of the Apple II original, because we expected it to be easier to understand and work with. It is a tiny 9KB MS-DOS .COM file - how hard can it be? Also, we happened to come across https://github.com/begoon/bolo - a project with the same goal, graciously hosting the binary, and even a patch for unlimited lives, making it even easier to get started.
+There is working code in the [src/](https://github.com/tmikov/bolo/tree/master/src) directory.
 
-Not much is known about the MS DOS port or the mysterious "Mr.Rm", but it appears to be a completely faithful reimplementation of the original, with some minor graphical changes (the colors, the compass, etc). Did he reverse engineer the original binary? We would like to think so and imagine that we are continuing a great tradition.
+To exercize the working code paths, the app moves the ship with arrow keys around the maze with collision detection.
 
-Examining the binary tells us that:
-1. It is not just a mechanical translation of the original 6502 assembly: the code fully utilizes the 8086 CPU's registers (the 6502 only had three 8-bit registers, 8086 is abundant in comparison), performs multiplication, and so on. It also cleverly uses EGA mode 0Dh to perform fewer graphics writes (just one bit per pixel, instead of four), and so on. However, I also feel that it occasionally overuses 8-bit registers, perhaps showing its 6502 ancestry.
-2. It was coded in 8086 assembler, no high level language compiler was used. Even the carry flag is passed as an extra argument in some functions, to extend a value from 8 to 9 bits!
-3. The author seemed like he was enjoying himself writing it, sometimes doing things not because they are necessarily much faster or smaller, but because they are fun. For example, the bitmaps of the tank gun partially overlap to save a few bytes. Each bitmap is 7 bytes and there are 8 of them, for a grand total of 56 bytes! By partially overlapping them, around 10 bytes were saved! Similarly, the tank has 8 7-byte bitmaps, but because it is symmetric, only 4 are needed, thus saving a whopping 26 bytes (well, actually somewhat less, because of additional 8 pointers needed)! Tell that to my 100MB Electron app...
+Note that when we say "re-implement", we don't mean recreate the output (which in this case could have been accomplished by just rendering a bitmap), but rather port the *original* logic to C and get that logic do the work. For example, this is the code that draws multiple strings to the screen:
+```c
+/// Draw a sequence of string/offset pairs terminated with a null string ptr.
+static void draw_mstrs(const SBOLDesc *strings) {
+  for (; strings->str; ++strings)
+    draw_str(strings->offset, strings->str);
+}
+```
+Here are a couple of screenshots (note the blurriness caused by OpenGL filering when upscaling from the native 320x200).
+
+### Level selection
+![](https://raw.github.com/tmikov/bolo/master/images/levsel.png)
+
+### Maze and Ship
+![](https://raw.github.com/tmikov/bolo/master/images/maze.png)
 
 The Re-implementation
 --------------------
@@ -54,35 +72,6 @@ no_collision:
 
 The finished application will work on major operating systems and web (using WebGL) and will have minimal dependencies.
 
-Current Status
---------------
-In just a couple of days we have been able to re-implement:
-- title screen 
-- level-selection screen 
-- main ship rendering 
-- maze rendering 
-- some other stuff. 
-
-There is working code in the [src/](https://github.com/tmikov/bolo/tree/master/src) directory.
-  
-To exercize the working code paths, the app is allows moving the ship with arrow keys around the maze with collision detection.
-
-Note that when we say "re-implement", we don't mean recreate the output (which in this case could have been accomplished by just rendering a bitmap), but rather port the *original* logic to C and get that logic do the work. For example, this is the code that draws multiple strings to the screen:
-```c
-/// Draw a sequence of string/offset pairs terminated with a null string ptr.
-static void draw_mstrs(const SBOLDesc *strings) {
-  for (; strings->str; ++strings)
-    draw_str(strings->offset, strings->str);
-}
-```
-Here are a couple of screenshots (note the blurriness caused by OpenGL filering when upscaling from the native 320x200).
-
-### Level selection
-![](https://raw.github.com/tmikov/bolo/master/images/levsel.png)
-
-### Maze and Ship
-![](https://raw.github.com/tmikov/bolo/master/images/maze.png)
-
 ### Web Platform
 
 Running on the web platform with Emscripten presents an interesting challenge because it is not compatible with the classic DOS game loop. We need to be able to relinquish control to the browser after rendering every frame.
@@ -92,6 +81,20 @@ In a native app we plan to solve this by using threads - the classic game logic 
 One very tempting solution we are looking into is [Asyncify](https://kripken.github.io/blog/wasm/2019/07/16/asyncify.html), which augments linear code to enable it to suspend the callstack and re-wind it.
 
 A perhaps better solution is to refactor the game into a more modern frame-based approach. We will have to see whether that is possible while preserving the original spirit of the game.
+
+The project is based on the unofficial IBM PC port of the original game by MrRm, 1993.
+
+Origins
+----------------------------
+
+We chose the MS DOS port instead of the Apple II original, because we expected it to be easier to understand and work with. It is a tiny 9KB MS-DOS .COM file - how hard can it be? Also, we happened to come across https://github.com/begoon/bolo - a project with the same goal, graciously hosting the binary, and even a patch for unlimited lives, making it even easier to get started.
+
+Not much is known about the MS DOS port or the mysterious "Mr.Rm", but it appears to be a completely faithful reimplementation of the original, with some minor graphical changes (the colors, the compass, etc). Did he reverse engineer the original binary? We would like to think so and imagine that we are continuing a great tradition.
+
+Examining the binary tells us that:
+1. It is not just a mechanical translation of the original 6502 assembly: the code fully utilizes the 8086 CPU's registers (the 6502 only had three 8-bit registers, 8086 is abundant in comparison), performs multiplication, and so on. It also cleverly uses EGA mode 0Dh to perform fewer graphics writes (just one bit per pixel, instead of four), and so on. However, I also feel that it occasionally overuses 8-bit registers, perhaps showing its 6502 ancestry.
+2. It was coded in 8086 assembler, no high level language compiler was used. Even the carry flag is passed as an extra argument in some functions, to extend a value from 8 to 9 bits!
+3. The author seemed like he was enjoying himself writing it, sometimes doing things not because they are necessarily much faster or smaller, but because they are fun. For example, the bitmaps of the tank gun partially overlap to save a few bytes. Each bitmap is 7 bytes and there are 8 of them, for a grand total of 56 bytes! By partially overlapping them, around 10 bytes were saved! Similarly, the tank has 8 7-byte bitmaps, but because it is symmetric, only 4 are needed, thus saving a whopping 26 bytes (well, actually somewhat less, because of additional 8 pointers needed)! Tell that to my 100MB Electron app...
 
 Reverse Engineering Approach
 ----------------------------
