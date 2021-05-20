@@ -224,4 +224,19 @@ end
                 AL: maze_buf[x,y]
                 SI: address in buffer
         Generate random numbers x=[1..61], y=[3..60] until maze_buf[x,y] >= 0.
+18                                in_screen
+        Input: BL: x, BH: y
+        Output: CF, clear if x <= 207 && y <= 190
+        Check whether the specified coordinate is in the visible screen.
+19                                adjust_bullets
+        Bullet coordinates are screen-relative, so they have to be adjusted as
+        we move the ship and the screen.
+        
+1A                                update_bullets
+        Move all bullets, checking for out of screen and collision detection.
+        Collision is checked for 12 steps ahead. If no collision or out of screen,
+        the bullet is moved 8 steps ahead.
+1A                                bullet_collide
+        Input: BL, BH - screen-relative x, y of bullet.
+        Invoked when a bullet hits something.
 end

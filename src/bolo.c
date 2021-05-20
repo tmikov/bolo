@@ -10,6 +10,7 @@
 #include "sokol_app.h"
 #include "sokol_gfx.h"
 #include "sokol_glue.h"
+#include "sokol_time.h"
 
 #include "blit.h"
 
@@ -78,6 +79,24 @@ typedef struct SBOLDesc {
 #define SPRITE_W 1
 #define SPRITE_H 7
 
+typedef struct {
+  int8_t x;
+  int8_t y;
+} StepXY;
+
+/// Step for every magnitude [0..5] and every direction [0..7].
+// clang-format off
+static const StepXY step_xy[6][8] = {
+  // N        NE       E       SE      S       SW        W        NW
+  {{0,  0}, {0,  0}, {0, 0}, {0, 0}, {0, 0}, {0,  0}, { 0, 0}, { 0,  0}},
+  {{0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}},
+  {{0, -2}, {2, -2}, {2, 0}, {2, 2}, {0, 2}, {-2, 2}, {-2, 0}, {-2, -2}},
+  {{0, -3}, {3, -3}, {3, 0}, {3, 3}, {0, 3}, {-3, 3}, {-3, 0}, {-3, -3}},
+  {{0, -4}, {4, -4}, {4, 0}, {4, 4}, {0, 4}, {-4, 4}, {-4, 0}, {-4, -4}},
+  {{0, -5}, {5, -5}, {5, 0}, {5, 5}, {0, 5}, {-5, 5}, {-5, 0}, {-5, -5}},
+};
+// clang-format on
+
 static uint8_t level;
 static uint8_t density;
 /// Score as a SBol string.
@@ -125,16 +144,18 @@ static unsigned dest_seg; // 4F8Ah
 /// The size in pixels of one cell.
 #define CELL_SIZE 38
 
-/// The cell of the ship.
-static uint8_t ship_cellx = 1;
-/// The cell of the ship.
-static uint8_t ship_celly = 3;
-/// Offset of the ship within the cell.
-static int8_t ship_ofsx = CELL_SIZE / 2;
-/// Offset of the ship within the cell.
-static int8_t ship_ofsy = CELL_SIZE / 2;
+#define NUM_ACTORS 42
 
-static uint8_t coll_flags1; // 5043h
+/// The cell of the ship.
+static uint8_t ship_cellx[NUM_ACTORS];
+/// The cell of the ship.
+static uint8_t ship_celly[NUM_ACTORS];
+/// Offset of the ship within the cell.
+static int8_t ship_ofsx[NUM_ACTORS];
+/// Offset of the ship within the cell.
+static int8_t ship_ofsy[NUM_ACTORS];
+/// Collision flags.
+static uint8_t coll_flags1[NUM_ACTORS];
 /// Ship velocity magnitude [0..5]
 static uint8_t vel_magn; // 50B7h
 /// Ship angle [0..7]. N, NE, E, SE, S, SW, W, NW.
@@ -145,6 +166,22 @@ static uint8_t gun_angle; // 5177h
 /// It is either 0 or 4 (when moving backwards).
 static uint8_t vel_angle; // 5178h
 
+/// Bullet x-coordinate, screen-relative.
+static uint8_t bullet_x[32];
+/// Bullet 8-coordinate, screen-relative.
+static uint8_t bullet_y[32];
+/// Bullet flags.
+/// 0xFF (or likely 0x80) if out of screen.
+/// 0x06 if collision.
+static uint8_t bullet_flags[32];
+/// Angle of the moving bullet.
+static uint8_t bullet_angle[32];
+
+/// Not completely sure what this is yet, but it is a 32-byte array and element
+/// 0 is incremented by 2 when we press the fire button. Theory: this has to do with
+/// actors (0 being the ship) firing.
+static uint8_t maybe_fire[32]; // 51F9h
+
 static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
 static void draw_bolo_8x20(unsigned offset);
 static void vert_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
@@ -152,6 +189,8 @@ static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
 static void draw_mstrs(const SBOLDesc *strings);
 static void draw_str(unsigned offset, const SBOL *str);
 static void draw_char_1x7(unsigned offset, SBOL ch);
+static inline bool in_screen(uint8_t x, uint8_t y);
+static void bullet_collide(uint8_t bl_x, uint8_t bh_y);
 static uint8_t rnd_update(uint8_t limit);
 static uint8_t rndnum(uint8_t limit);
 
@@ -231,7 +270,11 @@ static void ega_to_rgb(void) {
 }
 
 static inline uint8_t ega_read(unsigned offset) {
-  return g_ega_screen[0][offset];
+  return g_ega_screen[3][offset];
+}
+
+static inline bool ega_test(unsigned offset, uint8_t val) {
+  return (ega_read(offset) & val) != 0;
 }
 
 static inline void ega_or(unsigned offset, uint8_t value, uint8_t mask) {
@@ -593,16 +636,16 @@ static void draw_maze(unsigned seg) {
   const uint8_t *screenCellPtr;
 
   // Calculate topmost visible cell: 2 cells + 19 pixels from center.
-  screenCellY = ship_celly - 3;
-  screenOfsY = 19 - ship_ofsy;
+  screenCellY = ship_celly[0] - 3;
+  screenOfsY = 19 - ship_ofsy[0];
   if ((int)screenOfsY < 0) {
     screenOfsY += CELL_SIZE;
     ++screenCellY;
   }
 
   // Calculate leftmost visible cell: 2 cells + 31 pixels from center.
-  screenCellX = ship_cellx - 3;
-  screenOfsX = 31 - ship_ofsx;
+  screenCellX = ship_cellx[0] - 3;
+  screenOfsX = 31 - ship_ofsx[0];
   if ((int)screenOfsX < 0) {
     screenOfsX += CELL_SIZE;
     ++screenCellX;
@@ -725,7 +768,7 @@ static void draw_ship(unsigned pageSeg) {
   if (collisions) {
     // TODO: data_191e = 0xA;
     // Record the collision.
-    coll_flags1 = 1;
+    coll_flags1[0] = 1;
     // Stop the ship.
     vel_magn = 0;
     // TODO: data_192e = 0xA;
@@ -900,6 +943,91 @@ static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsign
 /// 2913:13BC                       draw_bolo_8x20  proc    near
 static void draw_bolo_8x20(unsigned offset) {
   draw_bmp(offset, bmp_bolo_8x20, 8, 20, 0xA);
+}
+
+/// Move all bullets while checking if they are in screen and for collision.
+/// 2913:1623                       sub_1623h       proc    near
+static void update_bullets(unsigned seg) {
+  ega_map_mask(EGAYellow);
+
+  unsigned si = 30;
+  do {
+    if (bullet_flags[si] != 0)
+      continue;
+
+    StepXY step = step_xy[1][bullet_angle[si]];
+
+    uint8_t x = bullet_x[si];
+    uint8_t y = bullet_y[si];
+
+    // Check the bullet for collision and in-screen 12 steps ahead.
+    uint8_t curX = x;
+    uint8_t curY = y;
+    unsigned cx = 12;
+    do {
+      if (ega_test(seg + vid_offset(curX, curY), vid_mask(curX)) == 0) {
+        curX += step.x;
+        curY += step.y;
+
+        if (!in_screen(curX, curY)) {
+          bullet_flags[si] = 0xFF;
+          goto nextBullet;
+        }
+      } else {
+        bullet_flags[si] = 6;
+        bullet_x[si] = curX;
+        bullet_y[si] = curY;
+        bullet_collide(curX, curY);
+        goto nextBullet;
+      }
+    } while (--cx);
+
+    // Draw the bullet 8 steps ahead.
+    x = x + step.x * 8;
+    y = y + step.y * 8;
+
+    if (in_screen(x, y)) {
+      ega_or(seg + vid_offset(x, y), vid_mask(x), EGAYellow);
+      bullet_x[si] = x;
+      bullet_y[si] = y;
+    } else {
+      bullet_flags[si] = 0xFF;
+    }
+
+  nextBullet:;
+  } while (si--);
+}
+
+/// Bullets coordinates are screen-relative, so they have to be adjusted as we
+/// move the ship/screen. We adjust them in the opposite direction of the ship.
+/// 2913:169C                       sub_20          proc    near
+static void adjust_bullets() {
+  if (vel_magn == 0)
+    return;
+  StepXY step = step_xy[vel_magn][(vel_angle + ship_angle) & 7];
+  unsigned i = 30;
+  do {
+    if (bullet_flags[i] & 0x80)
+      continue;
+    if (in_screen(bullet_x[i], bullet_y[i])) {
+      bullet_x[i] -= step.x;
+      bullet_y[i] -= step.y;
+    } else {
+      bullet_flags[i] = 0xFF;
+    }
+  } while (i--);
+}
+
+// \return true if x <= 207 and y <= 190;
+// 2913:1762                       sub_22          proc    near
+static inline bool in_screen(uint8_t x, uint8_t y) {
+  return x <= 207 && y <= 190;
+}
+
+/// Invoked upon a bullet collision. Coordinates are screen-relative.
+/// 2913:17EF                       bullet_collide  proc    near
+static void bullet_collide(uint8_t bl_x, uint8_t bh_y) {
+  // FIXME.
 }
 
 /// Return a pseudo random value in the range [0..power-of-two).
@@ -1089,6 +1217,8 @@ static struct {
   sg_pass_action pass_action;
   sg_pipeline pip;
   sg_bindings bind;
+
+  double lastUpdate;
 } state;
 
 static void bolo_update_screen() {
@@ -1100,6 +1230,9 @@ static void bolo_update_screen() {
 }
 
 static void bolo_init(void) {
+  stm_setup();
+  state.lastUpdate = 0;
+
   sg_setup(&(sg_desc){.context = sapp_sgcontext()});
 
   state.pass_action = (sg_pass_action){.colors[0] = {.action = SG_ACTION_CLEAR}};
@@ -1121,12 +1254,13 @@ static void bolo_init(void) {
   // draw_levsel();
   density = 4;
   gen_maze();
-  // clear_vp0();
-  // draw_hud();
-  // draw_maze(0);
-  // gun_angle = 3;
-  // ship_angle = 3;
-  // draw_ship(0);
+  ship_cellx[0] = 1;
+  ship_celly[0] = 3;
+  ship_ofsx[0] = CELL_SIZE / 2;
+  ship_ofsy[0] = CELL_SIZE / 2;
+
+  // Mark all bullets as out of screen.
+  memset(bullet_flags, 0xFF, sizeof(bullet_flags));
 
   /*
    * Triangle strip:
@@ -1162,41 +1296,70 @@ static void bolo_init(void) {
 
 static int ship_dx = 0;
 static int ship_dy = 0;
+static bool fire_req = false;
 
 static void render_test_frame(void) {
-  ship_ofsx += ship_dx;
-  if (ship_ofsx < 0) {
-    ship_ofsx += 38;
-    ship_cellx -= 1;
-  } else if (ship_ofsx >= 38) {
-    ship_ofsx -= 38;
-    ship_cellx += 1;
-  }
-  ship_ofsy += ship_dy;
-  if (ship_ofsy < 0) {
-    ship_ofsy += 38;
-    ship_celly -= 1;
-  } else if (ship_ofsy >= 38) {
-    ship_ofsy -= 38;
-    ship_celly += 1;
-  }
   clear_vp0();
   draw_hud();
   draw_maze(0);
+
+  update_bullets(0);
+  adjust_bullets();
   draw_ship(0);
 
-  if (0 && coll_flags1) {
-    coll_flags1 = 0;
-    ship_cellx = 1;
-    ship_celly = 3;
-    ship_ofsx = ship_ofsy = CELL_SIZE / 2;
+  if (coll_flags1[0]) {
+    coll_flags1[0] = 0;
+    ship_cellx[0] = 1;
+    ship_celly[0] = 3;
+    ship_ofsx[0] = ship_ofsy[0] = CELL_SIZE / 2;
     ship_dx = 0;
     ship_dy = 0;
+  } else {
+    ship_ofsx[0] += ship_dx;
+    if (ship_ofsx[0] < 0) {
+      ship_ofsx[0] += 38;
+      ship_cellx[0] -= 1;
+    } else if (ship_ofsx[0] >= 38) {
+      ship_ofsx[0] -= 38;
+      ship_cellx[0] += 1;
+    }
+    ship_ofsy[0] += ship_dy;
+    if (ship_ofsy[0] < 0) {
+      ship_ofsy[0] += 38;
+      ship_celly[0] -= 1;
+    } else if (ship_ofsy[0] >= 38) {
+      ship_ofsy[0] -= 38;
+      ship_celly[0] += 1;
+    }
+  }
+
+  if (fire_req) {
+    fire_req = false;
+
+    // Find an available bullet.
+    unsigned i;
+    for (i = 0; i != 30 && bullet_flags[i] == 0; ++i) {
+    }
+    bullet_flags[i] = 0;
+    bullet_angle[i] = gun_angle;
+    bullet_x[i] = 207 / 2 + step_xy[1][gun_angle].x * 8 + 4;
+    bullet_y[i] = 190 / 2 + step_xy[1][gun_angle].y * 8;
+
+    ega_or(vid_offset(bullet_x[i], bullet_y[i]), vid_mask(bullet_x[i]), EGAYellow);
   }
 }
 
 static void bolo_frame(void) {
-  render_test_frame();
+  double newTime = stm_sec(stm_now());
+  if (state.lastUpdate == 0)
+    state.lastUpdate = newTime - 1. / 18.2;
+  if (newTime - state.lastUpdate >= 1. / 18.2) {
+    do {
+      state.lastUpdate += 1. / 18.2;
+      render_test_frame();
+    } while (newTime - state.lastUpdate >= 1. / 18.2);
+    bolo_update_screen();
+  }
 
   sg_begin_default_pass(&state.pass_action, sapp_width(), sapp_height());
 
@@ -1219,7 +1382,6 @@ static void bolo_frame(void) {
 
   sg_apply_pipeline(state.pip);
   sg_apply_bindings(&state.bind);
-  bolo_update_screen();
   sg_draw(0, 4, 1);
   sg_end_pass();
   sg_commit();
@@ -1275,6 +1437,10 @@ static void bolo_event(const sapp_event *ev) {
     ship_dy = -angleVel[ship_angle][1];
   } else {
     ship_dx = ship_dy = 0;
+  }
+
+  if (keys[SAPP_KEYCODE_SPACE]) {
+    fire_req = true;
   }
 }
 

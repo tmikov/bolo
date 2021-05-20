@@ -7,20 +7,26 @@ This project is dedicated to reimplementing the classic Apple II game "BOLO" in 
 
 Originally forked from https://github.com/begoon/bolo.
 
+Based on the unofficial IBM PC port of the original game by MrRm, 1993.
+
 ![](https://raw.github.com/tmikov/bolo/master/bolo-screenshot.png)
 
 Current Status
 --------------
-In just a couple of days we have been able to re-implement:
+In just a few days we have been able to re-implement:
 - title screen
 - level-selection screen
 - main ship rendering
 - maze rendering
+- bullet rendering and movement  
 - some other stuff.
 
 There is working code in the [src/](https://github.com/tmikov/bolo/tree/master/src) directory.
 
-To exercize the working code paths, the app moves the ship with arrow keys around the maze with collision detection.
+To exercize the working code paths, the app controls ship around the maze with collision detection:
+- Arrow keys control the ship.
+- 1 & 2 rotate the gun.
+- Space fires.
 
 Note that when we say "re-implement", we don't mean recreate the output (which in this case could have been accomplished by just rendering a bitmap), but rather port the *original* logic to C and get that logic do the work. For example, this is the code that draws multiple strings to the screen:
 ```c
@@ -82,10 +88,9 @@ One very tempting solution we are looking into is [Asyncify](https://kripken.git
 
 A perhaps better solution is to refactor the game into a more modern frame-based approach. We will have to see whether that is possible while preserving the original spirit of the game.
 
-The project is based on the unofficial IBM PC port of the original game by MrRm, 1993.
-
 Origins
 ----------------------------
+The project is based on the unofficial IBM PC port of the original game by MrRm, 1993.
 
 We chose the MS DOS port instead of the Apple II original, because we expected it to be easier to understand and work with. It is a tiny 9KB MS-DOS .COM file - how hard can it be? Also, we happened to come across https://github.com/begoon/bolo - a project with the same goal, graciously hosting the binary, and even a patch for unlimited lives, making it even easier to get started.
 
