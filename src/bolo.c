@@ -106,6 +106,16 @@ static uint8_t time_5bit;
 #define MAZE_HEIGHT 64
 #define MAZE_STRIDE 64
 
+// Wall flags: top, right, bottom, left
+// Flags all always symmetrical in neighbouring cells: a right wall in cell X
+// must be followed by a left wall in cell X + 1, etc.
+#define W_L 1
+#define W_T 2
+#define W_R 4
+#define W_B 8
+#define W_NO 0
+#define W_ALL 0x0F
+
 static uint8_t tmp1_buf[MAZE_HEIGHT][MAZE_WIDTH];
 static uint8_t maze_buf[MAZE_HEIGHT][MAZE_WIDTH];
 
@@ -152,11 +162,7 @@ typedef struct {
 } XYPtr;
 static XYPtr maze_rnd_xy();
 
-typedef struct {
-  uint8_t *ptr;
-  uint8_t val;
-} ValPtr;
-static ValPtr maze_readxy(int8_t x, int8_t y);
+static uint8_t *maze_xy(int8_t x, int8_t y);
 
 static const uint8_t bmps_font_1x7[];
 static const uint8_t bmp_gmaze_22x7[];
@@ -312,35 +318,35 @@ static void init_maze() {
   // 62: 00020202020202020202020202020000
   // 63: 00000000000000000000000000000000
   //
-  // My interpretation is:
-  // 04 - left boundary
-  // 08 - top boundary
-  // 01 - right boundary
-  // 02 - bottom boundary
-  // 0f - middle
+  // Wall flags
+  // 04 - right wall
+  // 08 - bottom wall
+  // 01 - left wall
+  // 02 - top wall
+  // 0f - wall on 4 sides of cell
 
   uint8_t *b2 = maze_buf[0];
   // row 0, 1, 2:0
-  b2 = mempset(b2, 0, 2 * MAZE_WIDTH + 1);
+  b2 = mempset(b2, W_NO, 2 * MAZE_WIDTH + 1);
   // row [2:1..2:61]
-  b2 = mempset(b2, 8, MAZE_WIDTH - 1 - 2);
+  b2 = mempset(b2, W_B, MAZE_WIDTH - 1 - 2);
   // row 2:62, 2:63
-  *b2++ = 0;
-  *b2++ = 0;
+  *b2++ = W_NO;
+  *b2++ = W_NO;
   // row 3:0
-  *b2++ = 4;
+  *b2++ = W_R;
   // row [3:1 .. 61:61]
-  b2 = mempset(b2, 0x0F, MAZE_WIDTH - 1 + (MAZE_HEIGHT - 8) * MAZE_WIDTH + MAZE_WIDTH - 2);
+  b2 = mempset(b2, W_ALL, MAZE_WIDTH - 1 + (MAZE_HEIGHT - 8) * MAZE_WIDTH + MAZE_WIDTH - 2);
   // row 61:62
-  *b2++ = 1;
+  *b2++ = W_L;
   // row 61:63
-  *b2++ = 0;
+  *b2++ = W_NO;
   // row 62:0
-  *b2++ = 0;
+  *b2++ = W_NO;
   // row [62:1..62:61]
-  b2 = mempset(b2, 2, MAZE_WIDTH - 1 - 2);
+  b2 = mempset(b2, W_T, MAZE_WIDTH - 1 - 2);
   // row [62:62..63:63]
-  b2 = mempset(b2, 0, 2 + MAZE_WIDTH * 2);
+  b2 = mempset(b2, W_NO, 2 + MAZE_WIDTH * 2);
   assert(b2 == maze_buf[0] + sizeof(maze_buf) && "b2 must cover maze_buf");
 
   // Fill the middle sides: 01, 00 on the right, followed by 04 on the left.
@@ -348,15 +354,15 @@ static void init_maze() {
   b2 = maze_buf[0] + 3 * MAZE_WIDTH + MAZE_WIDTH - 2;
   unsigned cnt = MAZE_HEIGHT - 7;
   do {
-    b2[0] = 1;
-    b2[1] = 0;
-    b2[2] = 4;
+    b2[0] = W_L;
+    b2[1] = W_NO;
+    b2[2] = W_R;
     b2 += MAZE_WIDTH;
   } while (--cnt);
 }
 
 #ifndef NDEBUG
-static void dump_maze() {
+void dump_maze() {
   for (unsigned y = 0; y != MAZE_HEIGHT; ++y) {
     for (unsigned x = 0; x != MAZE_WIDTH; ++x) {
       printf("%02x", maze_buf[y][x]);
@@ -371,76 +377,133 @@ static void dump_maze() {
 static void gen_maze() {
   init_maze();
 
-  unsigned cnt = 58 * 61 - 1;
+  unsigned cnt = (MAZE_HEIGHT - 6) * (MAZE_WIDTH - 3) - 1;
 
   XYPtr xyp = maze_rnd_xy();
   unsigned x = xyp.x;
   unsigned y = xyp.y;
   uint8_t *ptr = xyp.ptr;
 
+  // Generating the maze. All cells initially start as unconnected cells with
+  // four walls. The goal of the algorithm is to ensure that in the end all
+  // cells are connected (there are no unreachable cells). It achieves that by
+  // repeatedly connecting new cells to the existing path of connected cells.
+  //
+  // On every iteration (except the first one), we are positioned in a
+  // cell with at least one opening, bordering at least one unconnected cell.
+  // Then we randomly remove one of walls to an unconnected cell and move into
+  // the into the newly connected cell. The process repeats.
+  // In this way on every iteration we are guaranteed to connect a new
+  // unconnected cell to the path of already connected cells. Since the loop
+  // iterates the correct number of times, by the end it is guaranteed that all
+  // the cells in the maze are connected.
+  //
+  // Occasionally we may end up with a cell that doesn't border any unconnected
+  // cells - in that case we search for the next cell with at least one missing
+  // wall and try again.
+
   for (;;) {
-    // Bits are set here if we encounter a wall in each direction.
+    // Bits are set here if we encounter a boxed cell (all four walls set)
+    // in the corresponding direction.
     uint8_t wallMask = 0;
 
-    if (y != 60 && *(ptr + MAZE_STRIDE) >= 0x0F)
-      wallMask |= 8;
-    if (x != 61 && *(ptr + 1) >= 0x0F)
-      wallMask |= 4;
-    if (y >= 4 && *(ptr - MAZE_STRIDE) >= 0x0F)
-      wallMask |= 2;
-    if (x >= 2 && *(ptr - 1) >= 0x0F)
-      wallMask |= 1;
+    if (y != MAZE_HEIGHT - 4 && *(ptr + MAZE_STRIDE) >= W_ALL)
+      wallMask |= W_B;
+    if (x != MAZE_WIDTH - 3 && *(ptr + 1) >= W_ALL)
+      wallMask |= W_R;
+    if (y >= 4 && *(ptr - MAZE_STRIDE) >= W_ALL)
+      wallMask |= W_T;
+    if (x >= 2 && *(ptr - 1) >= W_ALL)
+      wallMask |= W_L;
 
+    // If we didn't encounter boxes in any direction, scan to the right and bottom
+    // until we encounter a cell with fewer than 4 walls and retry the loop.
+    // I am not sure when this can happen, but seems like a reasonable
+    // precaution.
     if (wallMask == 0) {
       do {
         ++x;
-        if (x == 62) {
+        if (x == MAZE_WIDTH - 2) {
           ++y;
-          if (y == 61)
+          if (y == MAZE_HEIGHT - 3)
             y = 3;
           x = 1;
         }
-        ValPtr valPtr = maze_readxy(x, y);
-        ptr = valPtr.ptr;
-      } while (*ptr == 0x0F);
+        ptr = maze_xy(x, y);
+      } while (*ptr == W_ALL);
 
       continue;
     }
 
+    // Directions for drilling.
+    enum Drill { DBottom = 1, DRight = 2, DTop = 3, DLeft = 4 };
+    // clang-format off
     static const uint8_t tab_gen_maze[15 * 4] = {
-        04, 04, 04, 04, 03, 03, 03, 03, 03, 04, 04, 03, 02, 02, 02, 02, 04, 02, 02, 04,
-        02, 03, 03, 02, 02, 03, 04, 00, 01, 01, 01, 01, 01, 04, 01, 04, 03, 01, 01, 03,
-        01, 00, 03, 04, 02, 01, 01, 02, 04, 02, 00, 01, 03, 01, 02, 00, 01, 02, 03, 04,
+        // 0001: W_L
+        04, 04, 04, 04,
+        // 0010: W_T
+        03, 03, 03, 03,
+        // 0011: W_T, W_L
+        03, 04, 04, 03,
+        // 0100: W_R
+        02, 02, 02, 02,
+        // 0101: W_R, W_L
+        04, 02, 02, 04,
+        // 0110: W_R, W_T
+        02, 03, 03, 02,
+        // 0111: W_R, W_T, W_L
+        02, 03, 04, 00,
+        // 1000: W_B
+        01, 01, 01, 01,
+        // 1001: W_B, W_L
+        01, 04, 01, 04,
+        // 1010: W_B, W_T
+        03, 01, 01, 03,
+        // 1011: W_B, W_T, W_L
+        01, 00, 03, 04,
+        // 1100: W_B, W_R
+        02, 01, 01, 02,
+        // 1101, W_B, W_R, W_L
+        04, 02, 00, 01,
+        // 1110: W_B, W_R, W_T
+        03, 01, 02, 00,
+        // 1111: W_B, W_R, W_T, W_L
+        01, 02, 03, 04,
     };
+    // clang-format on
     const uint8_t *tabPtr = tab_gen_maze + (wallMask - 1) * 4;
     unsigned rndVal;
     do
       rndVal = tabPtr[rnd_update(4)];
     while (rndVal == 0);
     switch (rndVal) {
-    case 1:
-      *ptr &= 7;
+    case DBottom:
+      // Remove bottom wall (and top wall in cell y + 1)
+      *ptr &= ~W_B;
       ptr += MAZE_STRIDE;
       ++y;
-      *ptr &= 0x0D;
+      *ptr &= ~W_T;
       break;
-    case 2:
-      *ptr &= 0x0B;
+    case DRight:
+      // Remove right wall
+      *ptr &= ~W_R;
       ++ptr;
       ++x;
-      *ptr &= 0x0E;
+      *ptr &= ~W_L;
       break;
-    case 3:
-      *ptr &= 0x0D;
+    case DTop:
+      // Remove top.
+      *ptr &= ~W_T;
       ptr -= MAZE_STRIDE;
       --y;
-      *ptr &= 7;
+      *ptr &= ~W_B;
       break;
-    case 4:
-      *ptr &= 0x0E;
+    case DLeft:
+      // Remove left.
+      *ptr &= ~W_L;
       --ptr;
       --x;
-      *ptr &= 0x0B;
+      *ptr &= ~W_R;
       break;
     default:
       assert(false && "unreachable");
@@ -450,7 +513,9 @@ static void gen_maze() {
       break;
   }
 
-  // Remove walls from the maze. The number of iterations depends on the density.
+  // After all cells in the maze are connected, the second stage of the
+  // algorithm randomly removes walls. The number of iterations depends on the
+  // density.
   static const unsigned rep_table[5] = {0x1B8A, 0x1608, 0x1086, 0x0B04, 0x0582};
   unsigned rep = rep_table[density];
 
@@ -461,27 +526,31 @@ static void gen_maze() {
     ptr = xyp.ptr;
     switch (rnd_update(4)) {
     case 0:
-      if (y != 60) {
-        *ptr &= 7;
-        *(ptr + MAZE_STRIDE) &= 0x0D;
+      // Remove bottom wall.
+      if (y != MAZE_HEIGHT - 4) {
+        *ptr &= ~W_B;
+        *(ptr + MAZE_STRIDE) &= ~W_T;
       }
       break;
     case 1:
-      if (x != 61) {
-        *ptr &= 0x0B;
-        *(ptr + 1) &= 0x0E;
+      // Remove right wall.
+      if (x != MAZE_WIDTH - 3) {
+        *ptr &= ~W_R;
+        *(ptr + 1) &= ~W_L;
       }
       break;
     case 2:
+      // Remove top wall.
       if (y != 3) {
-        *ptr &= 0x0D;
-        *(ptr - MAZE_STRIDE) &= 7;
+        *ptr &= ~W_T;
+        *(ptr - MAZE_STRIDE) &= ~W_B;
       }
       break;
     case 3:
+      // Remove left wall.
       if (x != 1) {
-        *ptr &= 0x0E;
-        *(ptr - 1) &= 0x0B;
+        *ptr &= ~W_L;
+        *(ptr - 1) &= ~W_R;
       }
       break;
     }
@@ -539,8 +608,7 @@ static void draw_maze(unsigned seg) {
     ++screenCellX;
   }
 
-  ValPtr valPtr = maze_readxy(screenCellX, screenCellY);
-  screenCellPtr = valPtr.ptr;
+  screenCellPtr = maze_xy(screenCellX, screenCellY);
 
   // Draw horizontal lines.
   const uint8_t *mazePtr = screenCellPtr;
@@ -834,8 +902,9 @@ static void draw_bolo_8x20(unsigned offset) {
   draw_bmp(offset, bmp_bolo_8x20, 8, 20, 0xA);
 }
 
-/// This routine is not fully understood yet.
-/// Update rnd_state and return a value.
+/// Return a pseudo random value in the range [0..power-of-two).
+/// \param limit must be a power of 2. It is used to mask the result.
+/// The random generator state is updated.
 /// 2913:2ED1                       rnd_update      proc    near
 static uint8_t rnd_update(uint8_t limit) {
   uint8_t save_t5b = time_5bit;
@@ -872,11 +941,11 @@ static uint8_t rndnum(uint8_t limit) {
 }
 
 /// Output: DL: x, DH: y, AL: maze_buf[x,y]
-/// Generate random numbers x=[1..61], y=[3..60] until maze_buf[x,y] >= 0.
+/// Generate random numbers x=[1..MAZE_WIDTH-3], y=[3..MAZE_HEIGHT-4] until maze_buf[x,y] >= 0.
 /// 2913:2F18                       maze_rnd_xy     proc    near
 static XYPtr maze_rnd_xy() {
   uint8_t x, y;
-  ValPtr valPtr;
+  uint8_t *ptr;
   do {
     do
       x = rnd_update(MAZE_WIDTH);
@@ -884,19 +953,21 @@ static XYPtr maze_rnd_xy() {
     do
       y = rnd_update(MAZE_HEIGHT);
     while (y >= MAZE_HEIGHT - 3 || y < 3);
-    valPtr = maze_readxy(x, y);
-  } while (valPtr.val & 0x80);
-  return (XYPtr){.x = x, .y = y, .ptr = valPtr.ptr};
+    ptr = maze_xy(x, y);
+  } while (*ptr & 0x80);
+  return (XYPtr){.x = x, .y = y, .ptr = ptr};
 }
 
-/// Read from maze, returning value and address.
+/// Calculate and return a pointer to a cell maze.
+/// (This function used to be called maze_readxy() and used to return a value
+/// as well as a pointer.)
 /// Note that the parameters are deliberately signed. draw_maze occasionally
 /// generates negative coords, and they need to work correctly.
 /// TODO: change the parameters to int and have the caller take care of the
 ///       expansion.
 /// 2913:2F3C                       maze_readxy     proc    near
-static ValPtr maze_readxy(int8_t x, int8_t y) {
-  return (ValPtr){.ptr = &maze_buf[y][x], .val = maze_buf[y][x]};
+static uint8_t *maze_xy(int8_t x, int8_t y) {
+  return &maze_buf[y][x];
 }
 
 /// "BOLO"
@@ -1020,10 +1091,18 @@ static struct {
   sg_bindings bind;
 } state;
 
+static void bolo_update_screen() {
+  ega_to_rgb();
+
+  sg_update_image(
+      state.bind.fs_images[SLOT_tex],
+      &(sg_image_data){.subimage[0][0] = {.ptr = g_rgb_screen, .size = sizeof(g_rgb_screen)}});
+}
+
 static void bolo_init(void) {
   sg_setup(&(sg_desc){.context = sapp_sgcontext()});
 
-  state.pass_action = (sg_pass_action){.colors[0] = {.action = SG_ACTION_DONTCARE}};
+  state.pass_action = (sg_pass_action){.colors[0] = {.action = SG_ACTION_CLEAR}};
 
   state.bind.fs_images[SLOT_tex] = sg_make_image(&(sg_image_desc){
       .width = EGA_WIDTH,
@@ -1048,17 +1127,12 @@ static void bolo_init(void) {
   // gun_angle = 3;
   // ship_angle = 3;
   // draw_ship(0);
-  // ega_to_rgb();
-
-  // sg_update_image(
-  //     state.bind.fs_images[SLOT_tex],
-  //     &(sg_image_data){.subimage[0][0] = {.ptr = g_rgb_screen, .size = sizeof(g_rgb_screen)}});
 
   /*
    * Triangle strip:
-   *    2     0
-   *
-   *    3     1
+   *    2  |  0
+   * ------+------
+   *    3  |  1
    */
   static const float vertices[][4] = {
       {1, 1, 1, 0},
@@ -1110,9 +1184,8 @@ static void render_test_frame(void) {
   draw_hud();
   draw_maze(0);
   draw_ship(0);
-  ega_to_rgb();
 
-  if (coll_flags1) {
+  if (0 && coll_flags1) {
     coll_flags1 = 0;
     ship_cellx = 1;
     ship_celly = 3;
@@ -1126,13 +1199,27 @@ static void bolo_frame(void) {
   render_test_frame();
 
   sg_begin_default_pass(&state.pass_action, sapp_width(), sapp_height());
+
+  {
+    // We always preserve the 320x200 aspect ratio. We don't care about the
+    // 1.2x1 pixel aspect ratio of the original CRT monitors.
+    int w = sapp_width();
+    int h = sapp_height();
+    int desiredW, desiredH;
+
+    if (w * EGA_HEIGHT / h >= EGA_WIDTH) {
+      desiredH = h;
+      desiredW = h * EGA_WIDTH / EGA_HEIGHT;
+    } else {
+      desiredW = w;
+      desiredH = w * EGA_HEIGHT / EGA_WIDTH;
+    }
+    sg_apply_viewport((w - desiredW) / 2, (h - desiredH) / 2, desiredW, desiredH, true);
+  }
+
   sg_apply_pipeline(state.pip);
   sg_apply_bindings(&state.bind);
-
-  sg_update_image(
-      state.bind.fs_images[SLOT_tex],
-      &(sg_image_data){.subimage[0][0] = {.ptr = g_rgb_screen, .size = sizeof(g_rgb_screen)}});
-
+  bolo_update_screen();
   sg_draw(0, 4, 1);
   sg_end_pass();
   sg_commit();
