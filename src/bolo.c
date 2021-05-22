@@ -140,7 +140,11 @@ static uint8_t time_5bit;
 #define W_NO 0
 #define W_ALL 0x0F
 
-static uint8_t tmp1_buf[MAZE_HEIGHT * MAZE_WIDTH];
+static uint8_t _ext_alist_buf[2 + MAZE_HEIGHT * MAZE_WIDTH];
+/// A 64x64 buffer containing the head of list of actors in each cell. 0 means
+/// EOL.
+/// It starts two bytes in to protect against negative indices.
+#define alist_buf (_ext_alist_buf + 2)
 /// The code relies on out of range access to maze_buf (indices -1 and -2), so
 /// we reserve two extra bytes in the beginning.
 static uint8_t _ext_maze_buf[2 + MAZE_HEIGHT * MAZE_WIDTH];
@@ -152,6 +156,9 @@ static unsigned dest_seg; // 4F8Ah
 
 /// The size in pixels of one cell.
 #define CELL_SIZE 38
+
+#define MAZE_SCREEN_W 208
+#define MAZE_SCREEN_H 191
 
 #define NUM_ACTORS 42
 
@@ -165,31 +172,44 @@ static int8_t ship_ofsx[NUM_ACTORS];
 static int8_t ship_ofsy[NUM_ACTORS];
 /// Collision flags.
 static uint8_t coll_flags1[NUM_ACTORS];
+/// Unknown.
+static uint8_t var_188e[NUM_ACTORS]; // 506Dh
+/// Unknown.
+static uint8_t var_189e[32]; // 5097h
 /// Ship velocity magnitude [0..5]
-static uint8_t vel_magn; // 50B7h
+static uint8_t vel_magn[32]; // 50B7h
 /// Ship angle [0..7]. N, NE, E, SE, S, SW, W, NW.
-static uint8_t ship_angle; // 50D7h
+static uint8_t ship_angle[32]; // 50D7h
+/// This looks like an index of the next element. 0 means EOL.
+static int8_t next_actor[32]; // 50F7h
 /// Absolute gun angle [0..7].
 static uint8_t gun_angle; // 5177h
 /// The angle of the ship velocity relative to the ship angle:
 /// It is either 0 or 4 (when moving backwards).
 static uint8_t vel_angle; // 5178h
-
 /// Bullet x-coordinate, screen-relative.
-static uint8_t bullet_x[32];
+static uint8_t bullet_x[32]; // 5179h
 /// Bullet 8-coordinate, screen-relative.
-static uint8_t bullet_y[32];
+static uint8_t bullet_y[32]; // 5199h
 /// Bullet flags.
 /// 0xFF (or likely 0x80) if out of screen.
 /// 0x06 if collision.
-static uint8_t bullet_flags[32];
+static uint8_t bullet_flags[32]; // 51B9h
 /// Angle of the moving bullet.
-static uint8_t bullet_angle[32];
+static uint8_t bullet_angle[32]; // 51D9h
 
 /// Not completely sure what this is yet, but it is a 32-byte array and element
 /// 0 is incremented by 2 when we press the fire button. Theory: this has to do with
 /// actors (0 being the ship) firing.
 static uint8_t maybe_fire[32]; // 51F9h
+
+static struct {
+  uint8_t var_194e[6]; // 521Ah
+  uint8_t var_195e[6]; // 5220h
+  uint8_t var_196e[6]; // 5226h
+  uint8_t var_197e[18]; // 522Ch
+} un1;
+static uint16_t var_198e; // 523Eh
 
 static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
 static void draw_bolo_8x20(unsigned offset);
@@ -198,8 +218,35 @@ static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
 static void draw_mstrs(const SBOLDesc *strings);
 static void draw_str(unsigned offset, const SBOL *str);
 static void draw_char_1x7(unsigned offset, SBOL ch);
+static void shoot_bullet(unsigned actor);
 static inline bool in_screen(uint8_t x, uint8_t y);
-static void bullet_collide(uint8_t bl_x, uint8_t bh_y);
+
+typedef struct {
+  /// The "signedness" of the resulting 8-bit values is tricky. They are declared
+  /// as unsigned, but their real values are in the following ranges:
+  /// x = [-48..255]
+  /// y = [-60..255]
+  /// Obviously there is overlap. I believe the overlap is resolved by relying
+  /// on the screen size 208x191. Values above 208 and 191 respectively are
+  /// outside of the screen, regardless whether they are negative or positive.
+  /// TODO: we should return 16-bit (or more integers) and eliminate all this
+  /// confusion (which was necessary on Apple II).
+  uint8_t x /*bl*/;
+  uint8_t y /*bh*/;
+  /// true if the result is valid.
+  bool success /*!cf*/;
+} XYFlag;
+static XYFlag
+abs_coords(uint8_t cellX /*bl*/, uint8_t cellY /*bh*/, uint8_t ofsX /*dl*/, uint8_t ofsY /*dh*/);
+
+static void bullet_collide(uint8_t screenX, uint8_t screenY);
+static void collide_cell(
+    int8_t checkCellX,
+    int8_t checkCellY,
+    int8_t objCellX,
+    int8_t objCellY,
+    uint8_t objOffsX,
+    uint8_t objOffsY);
 static uint8_t rnd_update(uint8_t limit);
 static uint8_t rndnum(uint8_t limit);
 
@@ -211,6 +258,10 @@ typedef struct {
 static XYPtr maze_rnd_xy();
 
 static uint8_t *maze_xy(int8_t x, int8_t y);
+static void inc_fuel(uint8_t dl);
+static uint8_t *alist_xy(int8_t x, int8_t y);
+
+static void playBoloSound(int ch_delay, int cl_length);
 
 static const uint8_t bmps_font_1x7[];
 static const uint8_t bmp_gmaze_22x7[];
@@ -351,12 +402,12 @@ static inline uint8_t *mempset(uint8_t *dst, uint8_t value, unsigned len) {
   return dst + len;
 }
 
-/// Draw generating maze, clear tmp1_buf, init maze_buf
+/// Draw generating maze, clear alist_buf, init maze_buf
 /// 2913:0321                       init_maze       proc    near
 static void init_maze() {
   ega_map_mask(EGAWhite);
   draw_bmp(dest_seg + VID_OFFSET(16, 5), bmp_gmaze_22x7, 22, 7, EGAWhite);
-  memset(tmp1_buf, 0, sizeof(tmp1_buf));
+  memset(alist_buf, 0, MAZE_WIDTH * MAZE_HEIGHT);
 
   // This is the state of the buffer at the end (the middle has been collapsed):
   //
@@ -687,10 +738,10 @@ static void draw_maze(unsigned seg) {
     ofsX += wallLength;
     wallLength = CELL_SIZE;
     if (ofsX >= 170)
-      wallLength = 208 - ofsX;
+      wallLength = MAZE_SCREEN_W - ofsX;
 
     ++mazePtr;
-  } while (ofsX < 208);
+  } while (ofsX < MAZE_SCREEN_W);
 
   // Draw vertical lines.
   mazePtr = screenCellPtr;
@@ -718,7 +769,7 @@ static void draw_maze(unsigned seg) {
       wallLength = 192 - ofsY;
 
     mazePtr += MAZE_STRIDE;
-  } while (ofsY <= 191);
+  } while (ofsY <= MAZE_SCREEN_H);
 }
 
 /// Draw a vertical line.
@@ -765,7 +816,7 @@ static void draw_ship(unsigned pageSeg) {
 
   unsigned offset = pageSeg + VID_OFFSET(104, 92);
   const uint8_t *gunbmp = bmps_gun_1x7[gun_angle];
-  const uint8_t *shipbmp = bmps_ship_1x7[(ship_angle + vel_angle) & 7];
+  const uint8_t *shipbmp = bmps_ship_1x7[(ship_angle[0] + vel_angle) & 7];
   unsigned collisions = 0;
   unsigned cnt = 7;
 
@@ -778,12 +829,12 @@ static void draw_ship(unsigned pageSeg) {
   } while (--cnt);
 
   if (collisions) {
-    // TODO: data_191e = 0xA;
     // Record the collision.
+    var_188e[0] = 0xA;
     coll_flags1[0] = 1;
     // Stop the ship.
-    vel_magn = 0;
-    // TODO: data_192e = 0xA;
+    vel_magn[0] = 0;
+    var_189e[0] = 0xA;
   }
 }
 
@@ -962,37 +1013,37 @@ static void draw_bolo_8x20(unsigned offset) {
 static void update_bullets(unsigned seg) {
   ega_map_mask(EGAYellow);
 
-  unsigned si = 30;
+  unsigned i = 30;
   do {
-    if (bullet_flags[si] != 0)
+    if (bullet_flags[i] != 0)
       continue;
 
-    StepXY step = step_xy[1][bullet_angle[si]];
+    StepXY step = step_xy[1][bullet_angle[i]];
 
-    uint8_t x = bullet_x[si];
-    uint8_t y = bullet_y[si];
+    uint8_t x = bullet_x[i];
+    uint8_t y = bullet_y[i];
 
     // Check the bullet for collision and in-screen 12 steps ahead.
     uint8_t curX = x;
     uint8_t curY = y;
-    unsigned cx = 12;
+    unsigned steps = 12;
     do {
       if (ega_test(seg + vid_offset(curX, curY), vid_mask(curX)) == 0) {
         curX += step.x;
         curY += step.y;
 
         if (!in_screen(curX, curY)) {
-          bullet_flags[si] = 0xFF;
+          bullet_flags[i] = 0xFF;
           goto nextBullet;
         }
       } else {
-        bullet_flags[si] = 6;
-        bullet_x[si] = curX;
-        bullet_y[si] = curY;
+        bullet_flags[i] = 6;
+        bullet_x[i] = curX;
+        bullet_y[i] = curY;
         bullet_collide(curX, curY);
         goto nextBullet;
       }
-    } while (--cx);
+    } while (--steps);
 
     // Draw the bullet 8 steps ahead.
     x = x + step.x * 8;
@@ -1000,23 +1051,23 @@ static void update_bullets(unsigned seg) {
 
     if (in_screen(x, y)) {
       ega_or(seg + vid_offset(x, y), vid_mask(x), EGAYellow);
-      bullet_x[si] = x;
-      bullet_y[si] = y;
+      bullet_x[i] = x;
+      bullet_y[i] = y;
     } else {
-      bullet_flags[si] = 0xFF;
+      bullet_flags[i] = 0xFF;
     }
 
   nextBullet:;
-  } while (si--);
+  } while (i--);
 }
 
 /// Bullets coordinates are screen-relative, so they have to be adjusted as we
 /// move the ship/screen. We adjust them in the opposite direction of the ship.
 /// 2913:169C                       sub_20          proc    near
 static void adjust_bullets() {
-  if (vel_magn == 0)
+  if (vel_magn[0] == 0)
     return;
-  StepXY step = step_xy[vel_magn][(vel_angle + ship_angle) & 7];
+  StepXY step = step_xy[vel_magn[0]][(vel_angle + ship_angle[0]) & 7];
   unsigned i = 30;
   do {
     if (bullet_flags[i] & 0x80)
@@ -1030,16 +1081,248 @@ static void adjust_bullets() {
   } while (i--);
 }
 
-// \return true if x <= 207 and y <= 190;
+/// Start position of the bullet depending on the shooting angle.
+static const int8_t bullet_start[8][2] = {
+    {3, -1},
+    {7, -1},
+    {7, 3},
+    {7, 7},
+    {3, 7},
+    {-1, 7},
+    {-1, 3},
+    {-1, -1},
+};
+
+/// Shoot a bullet from the specified actor, considering the actor's direction.
+/// If the actor is 0, use gun_angle.
+/// 2913:16F0                       proc_19          proc    near
+static void shoot_bullet(unsigned actor) {
+  XYFlag xyf = abs_coords(ship_cellx[actor], ship_celly[actor], ship_ofsx[actor], ship_ofsy[actor]);
+  if (xyf.success) {
+    uint8_t x = xyf.x;
+    uint8_t y = xyf.y;
+    // Look for an available bullet spot.
+    int i = 30;
+    do {
+      if (bullet_flags[i] & 0x80)
+        break;
+    } while (--i >= 0);
+    // Couldn't find one?
+    if (i < 0)
+      return;
+
+    bullet_flags[i] = 0;
+    uint8_t angle = actor == 0 ? gun_angle : ship_angle[actor];
+    bullet_angle[i] = angle;
+    x += bullet_start[angle][0];
+    y += bullet_start[angle][1];
+    bullet_x[i] = x;
+    bullet_y[i] = y;
+  }
+  playBoloSound(32, 30);
+}
+
+// \return true if x < MAZE_SCREEN_W and y < MAZE_SCREEN_H;
 // 2913:1762                       sub_22          proc    near
 static inline bool in_screen(uint8_t x, uint8_t y) {
-  return x <= 207 && y <= 190;
+  return x < MAZE_SCREEN_W && y < MAZE_SCREEN_H;
+}
+
+/// Convert cell coordinate and offset into screen-relative coordinates if they
+/// approximately fit in the screen. Return the screen-relative coordinates and
+/// flag=true on success, -1,-1, false if the coordinates don't fit.
+///
+/// The "signedness" of the resulting 8-bit values is tricky. They are declared
+/// as unsigned, but their real values are in the following ranges:
+/// x = [-48..255]
+/// y = [-60..255]
+/// Obviously there is overlap. I believe the overlap is resolved by relying
+/// on the screen size 208x191. Values above 208 and 191 respectively are
+/// outside of the screen, regardless whether they are negative or positive.
+/// TODO: we should return 16-bit (or more integers) and eliminate all this
+/// confusion (which was necessary on Apple II).
+///
+/// 2913:1770                       proc_20          proc    near
+static XYFlag
+abs_coords(uint8_t cellX /*bl*/, uint8_t cellY /*bh*/, uint8_t ofsX /*dl*/, uint8_t ofsY /*dh*/) {
+  // ship_cellx[0] - 3 is "start of screen" cell.
+  // x is distance of the ship from start of screen.
+  int8_t relCellX = cellX - (ship_cellx[0] - 3);
+  // At most 7 cells are visible horizontally.
+  if (relCellX >= 0 && relCellX < 7) {
+    // The original logic looks like this:
+    //   int8_t tmp = relCellX << 5; // Only positive if relCellX < 4.
+    //   int8_t x = ofsX + relCellX * CELL_SIZE;
+    //   if (x < 0 || tmp >= 0) {
+    // What does it do???
+    //
+    // This appears like an elaborate way of checking whether the result of the
+    // calculation fits in 8 unsigned bits. I suspect it is a remnant of the
+    // original 8-bit Apple II logic.
+    // The input values have these ranges:
+    //   ofsX = [0..37]
+    //   relCellX = [0..6]
+    // These are the possible values for every relCellX:
+    //   [0..37] + 0*38 = [  0.. 37]
+    //   [0..37] + 1*38 = [ 38.. 75]
+    //   [0..37] + 2*38 = [ 76..113]
+    //   [0..37] + 3*38 = [114..151]             [114..127,-128..-105]
+    //   [0..37] + 4*38 = [152..189]             [-104..-67]
+    //   [0..37] + 5*38 = [190..227]             [-66..-29]
+    //   [0..37] + 6*38 = [228..255, 0..9]       [-28..-1, 0..9]
+    // Observe two things:
+    // - Values get the sign bit set in the middle of relCellX = 3
+    // - The sign bit resets back to zero at the end relCellX = 6
+    // The code is trying to distinguish between two cases. If the sign bit of
+    // "x" is set, its real value is between 127 and 255, so it fits. If it
+    // isn't set, its real value could be [256..265] or it could be [0..127].
+    // To find out which, just check the value of relCellX. if it is less than
+    // 4, then the real value is [0..151], so it fits.
+    //
+    // If we use more than 16-bit arithmetic, the condition looks like this:
+    //   x > 127 && x < 256 || x < 152
+    // or simply:
+    //   x < 256
+    unsigned x = ofsX + relCellX * CELL_SIZE;
+    if (x < 256) {
+      x -= ship_ofsx[0] + 10;
+
+      int8_t relCellY = cellY - (ship_celly[0] - 3);
+      if (relCellY >= 0 && relCellY < 7) {
+        unsigned y = ofsY + relCellY * CELL_SIZE;
+        y -= ship_ofsy[0] + 22;
+        return (XYFlag){.x = x, .y = y, .success = true};
+      }
+    }
+  }
+
+  return (XYFlag){.x = -1, .y = -1, .success = false};
+}
+
+typedef struct {
+  uint8_t x_quot, y_quot;
+  uint8_t x_rem, y_rem;
+} XYDiv;
+
+/// Divide x and y by cell size and return the quotiens and remainders.
+/// 2913:17CC                       proc_21         proc    near
+static XYDiv div_cell_size(int x, int y) {
+  if (0) {
+    uint8_t xcells = -1;
+    do {
+      ++xcells;
+      x -= CELL_SIZE;
+      // NOTE: originally this condition used clever unsigned 8-bit arithmetic in
+      // order to handle inputs in range [0..207]: ((uint8_t)bl_x < (uint8_t)-CELL_SIZE)
+    } while (x >= 0);
+    x += CELL_SIZE;
+
+    uint8_t ycells = -1;
+    do {
+      ++ycells;
+      y -= CELL_SIZE;
+    } while (y >= 0);
+    y += CELL_SIZE;
+
+    return (XYDiv){.x_quot = xcells, .y_quot = ycells, .x_rem = x, .y_rem = y};
+  } else {
+    div_t xd = div(x, CELL_SIZE);
+    div_t yd = div(y, CELL_SIZE);
+    return (XYDiv){.x_quot = xd.quot, .y_quot = yd.quot, .x_rem = yd.rem, .y_rem = yd.rem};
+  }
 }
 
 /// Invoked upon a bullet collision. Coordinates are screen-relative.
 /// 2913:17EF                       bullet_collide  proc    near
-static void bullet_collide(uint8_t bl_x, uint8_t bh_y) {
-  // FIXME.
+static void bullet_collide(uint8_t screenX, uint8_t screenY) {
+  if ((screenX >= 107 - 7 && screenX < 107 + 8) && (screenY >= 95 - 7 && screenY < 95 + 8)) {
+    var_188e[0] = 0x0A;
+    coll_flags1[0] = 1;
+  }
+
+  XYDiv xydiv = div_cell_size(screenX + 13 + ship_ofsx[0], screenY + 19 + ship_ofsy[0]);
+  int8_t cellX = xydiv.x_quot - 3 + ship_cellx[0];
+  int8_t cellY = xydiv.y_quot - 3 + ship_celly[0];
+  uint8_t offsX = xydiv.x_rem;
+  uint8_t offsY = xydiv.y_rem;
+
+  collide_cell(cellX, cellY, cellX, cellY, offsX, offsY);
+
+  /// If not 0, the horizontal offset of the cell that must also be checked.
+  int8_t alsoCellX = offsX < 6 ? -1 : (offsX >= 32 ? 1 : 0);
+  if (alsoCellX)
+    collide_cell(cellX + alsoCellX, cellY, cellX, cellY, offsX, offsY);
+
+  if (offsY < 6) {
+    collide_cell(cellX, cellY - 1, cellX, cellY, offsX, offsY);
+    if (alsoCellX)
+      collide_cell(cellX + alsoCellX, cellY - 1, cellX, cellY, offsX, offsY);
+    return;
+  }
+
+  if (offsY >= 32) {
+    collide_cell(cellX, cellY + 1, cellX, cellY, offsX, offsY);
+    if (alsoCellX)
+      collide_cell(cellX + alsoCellX, cellY + 1, cellX, cellY, offsX, offsY);
+  }
+}
+
+/// Check the list of actors in the specified cell for collision with a
+/// colliding object.
+/// \param checkCellX, checkCellY  coordinates of the cell to check.
+/// 2913:1893                       proc_22         proc    near
+static void collide_cell(
+    int8_t checkCellX,
+    int8_t checkCellY,
+    int8_t objCellX,
+    int8_t objCellY,
+    uint8_t objOffsX,
+    uint8_t objOffsY) {
+  for (int act = *alist_xy(checkCellX, checkCellY); act != 0; act = next_actor[act]) {
+    if (coll_flags1[act]) {
+      if (coll_flags1[act] == 1 || (coll_flags1[act] & 0x70) == 0x10)
+        continue;
+    }
+
+    int xadj =
+        objCellX == ship_cellx[act] ? 0 : (objCellX < ship_cellx[act] ? -CELL_SIZE : CELL_SIZE);
+    int dist = xadj + objOffsX - ship_ofsx[act];
+    if (dist < -6 || dist >= 7)
+      continue;
+
+    int yadj =
+        objCellY == ship_celly[act] ? 0 : (objCellY < ship_celly[act] ? -CELL_SIZE : CELL_SIZE);
+    dist = yadj + objOffsY - ship_ofsy[act];
+    if (dist < -6 || dist >= 7)
+      continue;
+
+    uint8_t coll70 = coll_flags1[act] & 70;
+    if (coll70 == 0x60)
+      continue;
+
+    if (coll70)
+      un1.var_194e[coll_flags1[act] & 0x0F] = 0;
+
+    var_188e[act] = 0x0A;
+    coll_flags1[act] = 1;
+
+    inc_fuel(1);
+  }
+}
+
+/// 2913:1CC7                       inc_fuel        proc    near
+static void inc_fuel(uint8_t dl) {}
+
+/// Calculate and return a pointer to alist_buf element.
+/// Note that the parameters are deliberately signed. It works exactly like
+/// maze_xy().
+/// TODO: change the parameters to int and have the caller take care of the
+///       expansion.
+/// 2913:2305                       alist_readxy     proc    near
+static uint8_t *alist_xy(int8_t x, int8_t y) {
+  int ofs = y * MAZE_WIDTH + x;
+  assert(ofs >= -2);
+  return alist_buf + ofs;
 }
 
 /// Return a pseudo random value in the range [0..power-of-two).
@@ -1471,23 +1754,28 @@ static void bolo_init(void) {
   In this case: 19*32 + 56 = 664;  4.77e6 / 664 = 3592Hz for 4.1 ms
  */
 
-/// \return the number of samples generated.
-static int genSound(int sampRate, int ch_delay, int cl_length, float *buffer, int bufSize) {
+/// Play a BOLO sound.
+static void playBoloSound(int ch_delay, int cl_length) {
   static const int kCycleNs = 210;
   static const int kCPUFreq = 4770000;
   int loopPeriodCyc = (19 * ch_delay + 56) * 2;
   int loopRate = kCPUFreq / loopPeriodCyc;
 
-  int outLen = sampRate * cl_length / loopRate;
-  int result = outLen;
-  // In the unlikely even that the buffer is not sufficient, truncate.
-  if (outLen > bufSize)
-    outLen = bufSize;
+  enum { kBufSize = 2048 };
+  static float buffer[kBufSize];
 
+  const int sampRate = saudio_sample_rate();
+  int outLen = sampRate * cl_length / loopRate;
+  // In the unlikely even that the buffer is not sufficient, truncate.
+  if (outLen > kBufSize)
+    outLen = kBufSize;
+
+  float *p = buffer;
   float input = -0.1f;
   int acc = 0;
-  while (outLen--) {
-    *buffer++ = input;
+  int cnt = outLen;
+  while (cnt--) {
+    *p++ = input;
     acc += loopRate;
     while (acc >= sampRate) {
       acc -= sampRate;
@@ -1495,7 +1783,7 @@ static int genSound(int sampRate, int ch_delay, int cl_length, float *buffer, in
     }
   }
 
-  return result;
+  sound_queue_push(&state.fx, buffer, outLen);
 }
 
 static int ship_dx = 0;
@@ -1507,8 +1795,6 @@ static void render_test_frame(void) {
   draw_hud();
   draw_maze(0);
 
-  update_bullets(0);
-  adjust_bullets();
   draw_ship(0);
 
   if (coll_flags1[0]) {
@@ -1539,21 +1825,15 @@ static void render_test_frame(void) {
 
   if (fire_req) {
     fire_req = false;
+    shoot_bullet(0);
+  }
+  update_bullets(0);
+  adjust_bullets();
 
-    // Find an available bullet.
-    unsigned i;
-    for (i = 0; i != 30 && bullet_flags[i] == 0; ++i) {
-    }
-    bullet_flags[i] = 0;
-    bullet_angle[i] = gun_angle;
-    bullet_x[i] = 207 / 2 + step_xy[1][gun_angle].x * 8 + 4;
-    bullet_y[i] = 190 / 2 + step_xy[1][gun_angle].y * 8;
-
-    ega_or(vid_offset(bullet_x[i], bullet_y[i]), vid_mask(bullet_x[i]), EGAYellow);
-
-    static float buffer[2048];
-    int len = genSound(saudio_sample_rate(), 32, 30, buffer, sizeof(buffer) / sizeof(buffer[0]));
-    sound_queue_push(&state.fx, buffer, len);
+  // Temp hack. Clear bullets that are supposed to explode.
+  for (unsigned i = 0; i != 31; ++i) {
+    if (bullet_flags[i] == 6)
+      bullet_flags[i] = 0xFF;
   }
 }
 
@@ -1627,11 +1907,11 @@ static void bolo_event(const sapp_event *ev) {
       gun_angle = (gun_angle + 1) & 7;
       break;
     case SAPP_KEYCODE_LEFT:
-      ship_angle = (ship_angle - 1) & 7;
+      ship_angle[0] = (ship_angle[0] - 1) & 7;
       gun_angle = (gun_angle - 1) & 7;
       break;
     case SAPP_KEYCODE_RIGHT:
-      ship_angle = (ship_angle + 1) & 7;
+      ship_angle[0] = (ship_angle[0] + 1) & 7;
       gun_angle = (gun_angle + 1) & 7;
       break;
     default:
@@ -1640,11 +1920,11 @@ static void bolo_event(const sapp_event *ev) {
   }
 
   if (keys[SAPP_KEYCODE_UP]) {
-    ship_dx = angleVel[ship_angle][0];
-    ship_dy = angleVel[ship_angle][1];
+    ship_dx = angleVel[ship_angle[0]][0];
+    ship_dy = angleVel[ship_angle[0]][1];
   } else if (keys[SAPP_KEYCODE_DOWN]) {
-    ship_dx = -angleVel[ship_angle][0];
-    ship_dy = -angleVel[ship_angle][1];
+    ship_dx = -angleVel[ship_angle[0]][0];
+    ship_dy = -angleVel[ship_angle[0]][1];
   } else {
     ship_dx = ship_dy = 0;
   }

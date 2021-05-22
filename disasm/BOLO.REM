@@ -55,14 +55,15 @@ end
 
 
     ---------------------- Subroutine Reference Remarks -----------------------
-01                                 tmp1_readxy
+01                                 alist_readxy
          
         input: bl:x, bh:y
         output: ax, di, zf
-        Read from the byte array tmp1_buf_e[64][64]
-        di = tmp1_buf_e + x + y*64
+        Read from the byte array alist_buf_e[64][64]
+        di = alist_buf_e + x + y*64
         ax = sext(*di)
         zf = test(ax)
+        Read the head of the list of actors in cell x, y.
 02                                 maze_readxy
          
         input: 
@@ -236,7 +237,24 @@ end
         Move all bullets, checking for out of screen and collision detection.
         Collision is checked for 12 steps ahead. If no collision or out of screen,
         the bullet is moved 8 steps ahead.
-1A                                bullet_collide
+1B                                bullet_collide
         Input: BL, BH - screen-relative x, y of bullet.
         Invoked when a bullet hits something.
+1C                                collide_cell
+        Input:
+                BL, BH: maze cell to check
+                BP: object cell x, y
+                DL, DH: object offset x, y
+        Preserve: DX,  BP. Unless inc_fuel is invoked, also CX, and sets BX to BP.
+        Check the actors in the specified cell list for collision against the
+        specified object. Update the corresponding flags.
+1D                                abs_coords
+        Input:
+                BL, BH: cell x,y
+                DL, DH: offset x, y
+        Output:
+                Bl, BH: screen-relative coordinates
+                CF: 0 on success
+        Convert absolute coordinates (cell and offset) into screen relative coords.
+        If the coords are not in the screen, set CF and return 0FFh, 0FFh.
 end
