@@ -46,6 +46,9 @@ typedef enum EGAColor {
 #define EGA_PAGE_SIZE 0x2000
 #define EGA_PLANES 4
 
+#define EGA_WIDTH_POT 512
+#define EGA_HEIGHT_POT 256
+
 /// "SBOL" strings are a sequence of characters terminated by a negative, using
 /// this encoding:
 ///    0-9: digits
@@ -241,32 +244,35 @@ static RGBA8 g_ega_palette[16] = {
 };
 
 /// The EGA bitplanes converted to RGB here.
-static RGBA8 g_rgb_screen[EGA_WIDTH * EGA_HEIGHT];
+static RGBA8 g_rgb_screen[EGA_WIDTH_POT * EGA_HEIGHT_POT];
 
 /// Convert the active EGA screen page to RGB into g_rgb_screen.
 static void ega_to_rgb(void) {
-  unsigned pixcnt = EGA_STRIDE * EGA_HEIGHT;
   const uint8_t *ptr = g_ega_screen[0] + g_ega_page * EGA_PAGE_SIZE;
   RGBA8 *out = g_rgb_screen;
-  do {
-    uint8_t bits0 = ptr[0];
-    uint8_t bits1 = ptr[EGA_PAGE_SIZE * 2];
-    uint8_t bits2 = ptr[EGA_PAGE_SIZE * 4];
-    uint8_t bits3 = ptr[EGA_PAGE_SIZE * 6];
-
-    unsigned bitcnt = 8;
+  for (unsigned row = 0; row != EGA_HEIGHT; ++row) {
+    unsigned pixcnt = EGA_STRIDE;
     do {
-      unsigned index = ((bits0 & 0x80) >> 7) | ((bits1 & 0x80) >> 6) | ((bits2 & 0x80) >> 5) |
-          ((bits3 & 0x80) >> 4);
+      uint8_t bits0 = ptr[0];
+      uint8_t bits1 = ptr[EGA_PAGE_SIZE * 2];
+      uint8_t bits2 = ptr[EGA_PAGE_SIZE * 4];
+      uint8_t bits3 = ptr[EGA_PAGE_SIZE * 6];
 
-      *out++ = g_ega_palette[index];
+      unsigned bitcnt = 8;
+      do {
+        unsigned index = ((bits0 & 0x80) >> 7) | ((bits1 & 0x80) >> 6) | ((bits2 & 0x80) >> 5) |
+            ((bits3 & 0x80) >> 4);
 
-      bits0 <<= 1;
-      bits1 <<= 1;
-      bits2 <<= 1;
-      bits3 <<= 1;
-    } while (--bitcnt);
-  } while (++ptr, --pixcnt);
+        *out++ = g_ega_palette[index];
+
+        bits0 <<= 1;
+        bits1 <<= 1;
+        bits2 <<= 1;
+        bits3 <<= 1;
+      } while (--bitcnt);
+    } while (++ptr, --pixcnt);
+    out += EGA_WIDTH_POT - EGA_WIDTH;
+  }
 }
 
 static inline uint8_t ega_read(unsigned offset) {
@@ -1229,6 +1235,16 @@ static void bolo_update_screen() {
       &(sg_image_data){.subimage[0][0] = {.ptr = g_rgb_screen, .size = sizeof(g_rgb_screen)}});
 }
 
+static inline uint32_t nearest_pow2(uint32_t x) {
+  --x;
+  x |= x >> 1;
+  x |= x >> 2;
+  x |= x >> 4;
+  x |= x >> 8;
+  x |= x >> 16;
+  return x + 1;
+}
+
 static void bolo_init(void) {
   stm_setup();
   state.lastUpdate = 0;
@@ -1238,8 +1254,8 @@ static void bolo_init(void) {
   state.pass_action = (sg_pass_action){.colors[0] = {.action = SG_ACTION_CLEAR}};
 
   state.bind.fs_images[SLOT_tex] = sg_make_image(&(sg_image_desc){
-      .width = EGA_WIDTH,
-      .height = EGA_HEIGHT,
+      .width = nearest_pow2(EGA_WIDTH),
+      .height = nearest_pow2(EGA_HEIGHT),
       .usage = SG_USAGE_STREAM,
       .min_filter = SG_FILTER_LINEAR,
       .mag_filter = SG_FILTER_LINEAR,
@@ -1268,11 +1284,13 @@ static void bolo_init(void) {
    * ------+------
    *    3  |  1
    */
+  static const float U = (float)EGA_WIDTH / EGA_WIDTH_POT;
+  static const float V = (float)EGA_HEIGHT / EGA_HEIGHT_POT;
   static const float vertices[][4] = {
-      {1, 1, 1, 0},
-      {1, -1, 1, 1},
+      {1, 1, U, 0},
+      {1, -1, U, V},
       {-1, 1, 0, 0},
-      {-1, -1, 0, 1},
+      {-1, -1, 0, V},
   };
   state.bind.vertex_buffers[0] = sg_make_buffer(&(sg_buffer_desc){
       .data = SG_RANGE(vertices),
