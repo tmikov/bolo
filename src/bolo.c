@@ -138,8 +138,12 @@ static uint8_t time_5bit;
 #define W_NO 0
 #define W_ALL 0x0F
 
-static uint8_t tmp1_buf[MAZE_HEIGHT][MAZE_WIDTH];
-static uint8_t maze_buf[MAZE_HEIGHT][MAZE_WIDTH];
+static uint8_t tmp1_buf[MAZE_HEIGHT * MAZE_WIDTH];
+/// The code relies on out of range access to maze_buf (indices -1 and -2), so
+/// we reserve two extra bytes in the beginning.
+static uint8_t _ext_maze_buf[2 + MAZE_HEIGHT * MAZE_WIDTH];
+/// A 64x64 buffer. It starts two bytes in to protect against negative indices.
+#define maze_buf (_ext_maze_buf + 2)
 
 /// Destination segment for graphics writes.
 static unsigned dest_seg; // 4F8Ah
@@ -374,7 +378,7 @@ static void init_maze() {
   // 02 - top wall
   // 0f - wall on 4 sides of cell
 
-  uint8_t *b2 = maze_buf[0];
+  uint8_t *b2 = maze_buf;
   // row 0, 1, 2:0
   b2 = mempset(b2, W_NO, 2 * MAZE_WIDTH + 1);
   // row [2:1..2:61]
@@ -396,11 +400,11 @@ static void init_maze() {
   b2 = mempset(b2, W_T, MAZE_WIDTH - 1 - 2);
   // row [62:62..63:63]
   b2 = mempset(b2, W_NO, 2 + MAZE_WIDTH * 2);
-  assert(b2 == maze_buf[0] + sizeof(maze_buf) && "b2 must cover maze_buf");
+  assert(b2 == maze_buf + MAZE_WIDTH * MAZE_HEIGHT && "b2 must cover maze_buf");
 
   // Fill the middle sides: 01, 00 on the right, followed by 04 on the left.
   // Row 3:62
-  b2 = maze_buf[0] + 3 * MAZE_WIDTH + MAZE_WIDTH - 2;
+  b2 = maze_buf + 3 * MAZE_WIDTH + MAZE_WIDTH - 2;
   unsigned cnt = MAZE_HEIGHT - 7;
   do {
     b2[0] = W_L;
@@ -414,7 +418,7 @@ static void init_maze() {
 void dump_maze() {
   for (unsigned y = 0; y != MAZE_HEIGHT; ++y) {
     for (unsigned x = 0; x != MAZE_WIDTH; ++x) {
-      printf("%02x", maze_buf[y][x]);
+      printf("%02x", maze_buf[y * MAZE_WIDTH + x]);
     }
     printf("\n");
   }
@@ -1101,7 +1105,9 @@ static XYPtr maze_rnd_xy() {
 ///       expansion.
 /// 2913:2F3C                       maze_readxy     proc    near
 static uint8_t *maze_xy(int8_t x, int8_t y) {
-  return &maze_buf[y][x];
+  int ofs = y * MAZE_WIDTH + x;
+  assert(ofs >= -2);
+  return maze_buf + ofs;
 }
 
 /// "BOLO"

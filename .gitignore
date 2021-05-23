@@ -3,4 +3,4 @@ release/
 cmake-build*/
 .idea/
 .DS_Store
-.embuild/
+embuild/

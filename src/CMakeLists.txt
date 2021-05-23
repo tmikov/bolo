@@ -8,6 +8,9 @@ else ()
   set(SOKOL_SRC sokol.m)
 endif ()
 
+#add_compile_options(-fsanitize=address,undefined)
+#add_link_options(-fsanitize=address,undefined)
+
 set(SOURCE_FILES
   bolo.c
   ${SOKOL_SRC} sokol_app.h sokol_gfx.h sokol_glue.h)
