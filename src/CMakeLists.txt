@@ -23,7 +23,8 @@ else()
   target_link_libraries(bolo
     "-framework Cocoa"
     "-framework QuartzCore"
-    "-framework OpenGL")
+    "-framework OpenGL"
+    "-framework AudioToolbox")
 #  target_link_libraries(bolo
 #    "-framework Cocoa"
 #    "-framework QuartzCore"

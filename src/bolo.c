@@ -8,6 +8,7 @@
 // reimplementation.
 
 #include "sokol_app.h"
+#include "sokol_audio.h"
 #include "sokol_gfx.h"
 #include "sokol_glue.h"
 #include "sokol_time.h"
@@ -16,6 +17,7 @@
 
 #include <assert.h>
 #include <stdalign.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1225,13 +1227,131 @@ static const uint8_t bmps_ship_1x7[8][7] = {
     {0x18, 0x1C, 0x3E, 0xFE, 0xF8, 0x70, 0x30},
 };
 
+#define SOUND_QUEUE_CAPACITY 8192
+
+typedef struct {
+  /// Index of next element to read. Accessed only by the reader thread.
+  int head;
+  /// Index of next element write. Accessed only by the writer thread.
+  int tail;
+  /// Number of elements in queue. Shared by the reader and writer thread.
+  atomic_int count;
+  /// The actual data.
+  float samples[SOUND_QUEUE_CAPACITY];
+} sound_queue_t;
+
 static struct {
   sg_pass_action pass_action;
   sg_pipeline pip;
   sg_bindings bind;
 
   double lastUpdate;
+  sound_queue_t fx;
 } state;
+
+static void sound_queue_init(sound_queue_t *q) {
+  q->head = 0;
+  q->tail = 0;
+  atomic_init(&q->count, 0);
+}
+
+static int sound_queue_expect(sound_queue_t *q) {
+  return SOUND_QUEUE_CAPACITY - atomic_load_explicit(&q->count, memory_order_acquire);
+}
+
+static int sound_queue_count(sound_queue_t *q) {
+  return atomic_load_explicit(&q->count, memory_order_acquire);
+}
+
+typedef struct {
+  float *part1;
+  int size1;
+  float *part2;
+  int size2;
+} queue_parts_t;
+
+static queue_parts_t sound_queue_writeparts(sound_queue_t *q, int len) {
+  int expect = sound_queue_expect(q);
+  if (len > expect)
+    len = expect;
+
+  if (len <= SOUND_QUEUE_CAPACITY - q->tail) {
+    return (queue_parts_t){.part1 = q->samples + q->tail, .size1 = len};
+  } else {
+    int toCopy = SOUND_QUEUE_CAPACITY - q->tail;
+    return (queue_parts_t){
+        .part1 = q->samples + q->tail, .size1 = toCopy, .part2 = q->samples, .size2 = len - toCopy};
+  }
+}
+
+static queue_parts_t sound_queue_readparts(sound_queue_t *q, int len) {
+  int count = sound_queue_count(q);
+  if (len > count)
+    len = count;
+
+  if (len <= SOUND_QUEUE_CAPACITY - q->head) {
+    return (queue_parts_t){.part1 = q->samples + q->head, .size1 = len};
+  } else {
+    int toCopy = SOUND_QUEUE_CAPACITY - q->head;
+    return (queue_parts_t){
+        .part1 = q->samples + q->head, .size1 = toCopy, .part2 = q->samples, .size2 = len - toCopy};
+  }
+}
+
+static void sound_queue_adv_tail(sound_queue_t *q, int len) {
+  q->tail = (q->tail + len) & (SOUND_QUEUE_CAPACITY - 1);
+  atomic_fetch_add_explicit(&q->count, len, memory_order_release);
+}
+
+static void sound_queue_adv_head(sound_queue_t *q, int len) {
+  q->head = (q->head + len) & (SOUND_QUEUE_CAPACITY - 1);
+  atomic_fetch_add_explicit(&q->count, -len, memory_order_release);
+}
+
+static int sound_queue_push(sound_queue_t *q, const float *data, int len) {
+  queue_parts_t parts = sound_queue_writeparts(q, len);
+  memcpy(parts.part1, data, parts.size1 * sizeof(float));
+  if (parts.size2)
+    memcpy(parts.part2, data + parts.size1, parts.size2 * sizeof(float));
+  sound_queue_adv_tail(q, parts.size1 + parts.size2);
+  return parts.size1 + parts.size2;
+}
+
+static int sound_queue_pop(sound_queue_t *q, float *data, int len) {
+  queue_parts_t parts = sound_queue_readparts(q, len);
+  memcpy(data, parts.part1, sizeof(float) * parts.size1);
+  if (parts.size2)
+    memcpy(data + parts.size1, parts.part2, sizeof(float) * parts.size2);
+  sound_queue_adv_head(q, parts.size1 + parts.size2);
+  return parts.size1 + parts.size2;
+}
+
+static void bolo_sound_cb(float *buffer, int num_frames, int num_channels) {
+  int popped;
+  if (num_channels == 1) {
+    popped = sound_queue_pop(&state.fx, buffer, num_frames);
+  } else if (num_channels == 2) {
+    queue_parts_t parts = sound_queue_readparts(&state.fx, num_frames);
+    int i;
+    for (i = 0; i < parts.size1; ++i) {
+      buffer[0] = buffer[1] = parts.part1[i];
+      buffer += 2;
+    }
+    for (i = 0; i < parts.size2; ++i) {
+      buffer[0] = buffer[1] = parts.part2[i];
+      buffer += 2;
+    }
+    popped = parts.size1 + parts.size2;
+    sound_queue_adv_head(&state.fx, popped);
+  } else {
+    popped = 0;
+  }
+
+  if (popped < num_frames) {
+    // Fill the rest of the frame with zeroes.
+    memset(buffer + popped * num_channels, 0, sizeof(float) * (num_frames - popped) * num_channels);
+  }
+}
 
 static void bolo_update_screen() {
   ega_to_rgb();
@@ -1252,6 +1372,13 @@ static inline uint32_t nearest_pow2(uint32_t x) {
 }
 
 static void bolo_init(void) {
+  saudio_setup(&(saudio_desc){
+      //.sample_rate = 44100,
+      //.buffer_frames = 2048,
+      .stream_cb = bolo_sound_cb,
+      .num_channels = 1,
+  });
+
   stm_setup();
   state.lastUpdate = 0;
 
@@ -1318,6 +1445,59 @@ static void bolo_init(void) {
   });
 }
 
+/*
+  This is how BOLO generates sound. CH is the inner loop delay, CL is how many
+  times to flip the speaker. 8088 instruction cycles are written after every
+  instruction.
+                  mov     cl,30
+
+  locloop_146:
+                  mov     ch,32          [ 4]
+                  in      al,61h         [14]     ; port 61h, 8255 port B, read
+                  xor     al,data_180    [19]     ; (2913:2F66=2)
+                  out     61h,al         [14]     ; port 61h, 8255 B - spkr, etc
+  loc_147:
+                  dec     ch             [ 3]
+                  jnz     loc_147        [16 or 4]
+                  loop    locloop_146    [17 or 5]
+
+  Sound flip: 4+14+19+14 = 51
+  Delay loop: (CH-1)*19 + 7 = 19*CH - 19 + 7 = 19*CH - 12
+  Loop period: 51 + 19*CH - 12 + 17 = 19*CH + 56 cycles
+  Sound freq: 4.77MHz / (loop period * 2)
+  One cycle at 4.77MHz is 210ns (210e-9).
+  Loop period:
+
+  In this case: 19*32 + 56 = 664;  4.77e6 / 664 = 3592Hz for 4.1 ms
+ */
+
+/// \return the number of samples generated.
+static int genSound(int sampRate, int ch_delay, int cl_length, float *buffer, int bufSize) {
+  static const int kCycleNs = 210;
+  static const int kCPUFreq = 4770000;
+  int loopPeriodCyc = (19 * ch_delay + 56) * 2;
+  int loopRate = kCPUFreq / loopPeriodCyc;
+
+  int outLen = sampRate * cl_length / loopRate;
+  int result = outLen;
+  // In the unlikely even that the buffer is not sufficient, truncate.
+  if (outLen > bufSize)
+    outLen = bufSize;
+
+  float input = -0.1f;
+  int acc = 0;
+  while (outLen--) {
+    *buffer++ = input;
+    acc += loopRate;
+    while (acc >= sampRate) {
+      acc -= sampRate;
+      input = -input;
+    }
+  }
+
+  return result;
+}
+
 static int ship_dx = 0;
 static int ship_dy = 0;
 static bool fire_req = false;
@@ -1370,11 +1550,16 @@ static void render_test_frame(void) {
     bullet_y[i] = 190 / 2 + step_xy[1][gun_angle].y * 8;
 
     ega_or(vid_offset(bullet_x[i], bullet_y[i]), vid_mask(bullet_x[i]), EGAYellow);
+
+    static float buffer[2048];
+    int len = genSound(saudio_sample_rate(), 32, 30, buffer, sizeof(buffer) / sizeof(buffer[0]));
+    sound_queue_push(&state.fx, buffer, len);
   }
 }
 
 static void bolo_frame(void) {
   double newTime = stm_sec(stm_now());
+
   if (state.lastUpdate == 0)
     state.lastUpdate = newTime - 1. / 18.2;
   if (newTime - state.lastUpdate >= 1. / 18.2) {
@@ -1413,6 +1598,7 @@ static void bolo_frame(void) {
 
 static void bolo_cleanup(void) {
   sg_shutdown();
+  saudio_shutdown();
 }
 
 static int angleVel[][2] = {
