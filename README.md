@@ -18,15 +18,18 @@ In just a few days we have been able to re-implement:
 - level-selection screen
 - main ship rendering
 - maze rendering
-- bullet rendering and movement  
+- bullet rendering and movement
+- collision detection
+- explosions  
 - some other stuff.
 
 There is working code in the [src/](https://github.com/tmikov/bolo/tree/master/src) directory. Here is a [live demo](https://tmikov.github.io/bolo/).
 
-To exercize the working code paths, the app controls ship around the maze with collision detection:
+To exercise the working code paths, the app controls ship around the maze with collision detection:
 - Arrow keys control the ship.
 - 1 & 2 rotate the gun.
 - Space fires.
+- R resets the game.
 
 Note that when we say "re-implement", we don't mean recreate the output (which in some cases could have been accomplished by just rendering a png), but rather port the *original* logic to C and get that logic do the work. For example, this is the code that draws multiple strings to the screen:
 ```c

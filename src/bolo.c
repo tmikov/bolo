@@ -160,48 +160,52 @@ static unsigned dest_seg; // 4F8Ah
 #define MAZE_SCREEN_W 208
 #define MAZE_SCREEN_H 191
 
-#define NUM_ACTORS 42
+#define NUM_ACTORS42 42
+#define NUM_ACTORS32 32
 
 /// The cell of the ship.
-static uint8_t ship_cellx[NUM_ACTORS];
+static uint8_t ship_cellx[NUM_ACTORS42];
 /// The cell of the ship.
-static uint8_t ship_celly[NUM_ACTORS];
+static uint8_t ship_celly[NUM_ACTORS42];
 /// Offset of the ship within the cell.
-static int8_t ship_ofsx[NUM_ACTORS];
+static int8_t ship_ofsx[NUM_ACTORS42];
 /// Offset of the ship within the cell.
-static int8_t ship_ofsy[NUM_ACTORS];
+static int8_t ship_ofsy[NUM_ACTORS42];
 /// Collision flags.
-static uint8_t coll_flags1[NUM_ACTORS];
+static uint8_t coll_flags1[NUM_ACTORS42];
 /// Unknown.
-static uint8_t var_188e[NUM_ACTORS]; // 506Dh
+static uint8_t var_188e[NUM_ACTORS42]; // 506Dh
 /// Unknown.
-static uint8_t var_189e[32]; // 5097h
+static uint8_t var_189e[NUM_ACTORS32]; // 5097h
 /// Ship velocity magnitude [0..5]
-static uint8_t vel_magn[32]; // 50B7h
+static uint8_t vel_magn[NUM_ACTORS32]; // 50B7h
 /// Ship angle [0..7]. N, NE, E, SE, S, SW, W, NW.
-static uint8_t ship_angle[32]; // 50D7h
+static uint8_t ship_angle[NUM_ACTORS32]; // 50D7h
 /// This looks like an index of the next element. 0 means EOL.
-static int8_t next_actor[32]; // 50F7h
+static uint8_t next_actor[NUM_ACTORS32]; // 50F7h
+static uint8_t prev_actor[NUM_ACTORS32]; // 5117h
+/// Points to the list head alist_buf where the actor belongs.
+static uint8_t *pactor_list[NUM_ACTORS32]; // 5137h
 /// Absolute gun angle [0..7].
 static uint8_t gun_angle; // 5177h
 /// The angle of the ship velocity relative to the ship angle:
 /// It is either 0 or 4 (when moving backwards).
 static uint8_t vel_angle; // 5178h
 /// Bullet x-coordinate, screen-relative.
-static uint8_t bullet_x[32]; // 5179h
+static uint8_t bullet_x[NUM_ACTORS32]; // 5179h
 /// Bullet 8-coordinate, screen-relative.
-static uint8_t bullet_y[32]; // 5199h
+static uint8_t bullet_y[NUM_ACTORS32]; // 5199h
 /// Bullet flags.
 /// 0xFF (or likely 0x80) if out of screen.
 /// 0x06 if collision.
-static uint8_t bullet_flags[32]; // 51B9h
+static uint8_t bullet_flags[NUM_ACTORS32]; // 51B9h
 /// Angle of the moving bullet.
-static uint8_t bullet_angle[32]; // 51D9h
+static uint8_t bullet_angle[NUM_ACTORS32]; // 51D9h
 
 /// Not completely sure what this is yet, but it is a 32-byte array and element
 /// 0 is incremented by 2 when we press the fire button. Theory: this has to do with
 /// actors (0 being the ship) firing.
-static uint8_t maybe_fire[32]; // 51F9h
+static uint8_t maybe_fire[NUM_ACTORS32]; // 51F9h
 
 static struct {
   uint8_t var_194e[6]; // 521Ah
@@ -221,7 +225,7 @@ static void draw_char_1x7(unsigned offset, SBOL ch);
 static void shoot_bullet(unsigned actor);
 static inline bool in_screen(uint8_t x, uint8_t y);
 
-typedef struct {
+typedef struct XYFlag {
   /// The "signedness" of the resulting 8-bit values is tricky. They are declared
   /// as unsigned, but their real values are in the following ranges:
   /// x = [-48..255]
@@ -237,7 +241,7 @@ typedef struct {
   bool success /*!cf*/;
 } XYFlag;
 static XYFlag
-abs_coords(uint8_t cellX /*bl*/, uint8_t cellY /*bh*/, uint8_t ofsX /*dl*/, uint8_t ofsY /*dh*/);
+rel_coords(uint8_t cellX /*bl*/, uint8_t cellY /*bh*/, uint8_t ofsX /*dl*/, uint8_t ofsY /*dh*/);
 
 static void bullet_collide(uint8_t screenX, uint8_t screenY);
 static void collide_cell(
@@ -247,6 +251,14 @@ static void collide_cell(
     int8_t objCellY,
     uint8_t objOffsX,
     uint8_t objOffsY);
+static uint8_t *maze_xy(int8_t x, int8_t y);
+static void draw_explosion(unsigned vidSeg, int actor);
+static void proc_25(unsigned vidSeg);
+static uint8_t proc_26(uint8_t mask);
+static void inc_fuel(uint8_t dl);
+static uint8_t *alist_xy(int8_t x, int8_t y);
+static void add_actor(unsigned actor, int8_t cellX, int8_t cellY);
+static void remove_actor(unsigned actor);
 static uint8_t rnd_update(uint8_t limit);
 static uint8_t rndnum(uint8_t limit);
 
@@ -256,10 +268,6 @@ typedef struct {
   uint8_t *ptr;
 } XYPtr;
 static XYPtr maze_rnd_xy();
-
-static uint8_t *maze_xy(int8_t x, int8_t y);
-static void inc_fuel(uint8_t dl);
-static uint8_t *alist_xy(int8_t x, int8_t y);
 
 static void playBoloSound(int ch_delay, int cl_length);
 
@@ -1013,7 +1021,7 @@ static void draw_bolo_8x20(unsigned offset) {
 static void update_bullets(unsigned seg) {
   ega_map_mask(EGAYellow);
 
-  unsigned i = 30;
+  unsigned i = NUM_ACTORS32 - 2;
   do {
     if (bullet_flags[i] != 0)
       continue;
@@ -1068,7 +1076,7 @@ static void adjust_bullets() {
   if (vel_magn[0] == 0)
     return;
   StepXY step = step_xy[vel_magn[0]][(vel_angle + ship_angle[0]) & 7];
-  unsigned i = 30;
+  unsigned i = NUM_ACTORS32 - 2;
   do {
     if (bullet_flags[i] & 0x80)
       continue;
@@ -1081,28 +1089,16 @@ static void adjust_bullets() {
   } while (i--);
 }
 
-/// Start position of the bullet depending on the shooting angle.
-static const int8_t bullet_start[8][2] = {
-    {3, -1},
-    {7, -1},
-    {7, 3},
-    {7, 7},
-    {3, 7},
-    {-1, 7},
-    {-1, 3},
-    {-1, -1},
-};
-
 /// Shoot a bullet from the specified actor, considering the actor's direction.
 /// If the actor is 0, use gun_angle.
 /// 2913:16F0                       proc_19          proc    near
 static void shoot_bullet(unsigned actor) {
-  XYFlag xyf = abs_coords(ship_cellx[actor], ship_celly[actor], ship_ofsx[actor], ship_ofsy[actor]);
+  XYFlag xyf = rel_coords(ship_cellx[actor], ship_celly[actor], ship_ofsx[actor], ship_ofsy[actor]);
   if (xyf.success) {
     uint8_t x = xyf.x;
     uint8_t y = xyf.y;
     // Look for an available bullet spot.
-    int i = 30;
+    int i = NUM_ACTORS32 - 2;
     do {
       if (bullet_flags[i] & 0x80)
         break;
@@ -1114,6 +1110,17 @@ static void shoot_bullet(unsigned actor) {
     bullet_flags[i] = 0;
     uint8_t angle = actor == 0 ? gun_angle : ship_angle[actor];
     bullet_angle[i] = angle;
+    /// Start position of the bullet depending on the shooting angle.
+    static const int8_t bullet_start[8][2] = {
+        {3, -1},
+        {7, -1},
+        {7, 3},
+        {7, 7},
+        {3, 7},
+        {-1, 7},
+        {-1, 3},
+        {-1, -1},
+    };
     x += bullet_start[angle][0];
     y += bullet_start[angle][1];
     bullet_x[i] = x;
@@ -1144,7 +1151,7 @@ static inline bool in_screen(uint8_t x, uint8_t y) {
 ///
 /// 2913:1770                       proc_20          proc    near
 static XYFlag
-abs_coords(uint8_t cellX /*bl*/, uint8_t cellY /*bh*/, uint8_t ofsX /*dl*/, uint8_t ofsY /*dh*/) {
+rel_coords(uint8_t cellX /*bl*/, uint8_t cellY /*bh*/, uint8_t ofsX /*dl*/, uint8_t ofsY /*dh*/) {
   // ship_cellx[0] - 3 is "start of screen" cell.
   // x is distance of the ship from start of screen.
   int8_t relCellX = cellX - (ship_cellx[0] - 3);
@@ -1310,8 +1317,270 @@ static void collide_cell(
   }
 }
 
+static const uint8_t blt_expl0[7] = {
+    0x00,
+    0x00,
+    0x1C,
+    0x1C,
+    0x1C,
+    0x00,
+    0x00,
+};
+static const uint8_t blt_expl1[7] = {
+    0x00,
+    0x1C,
+    0x3E,
+    0x3E,
+    0x3E,
+    0x1C,
+    0x00,
+};
+static const uint8_t blt_expl2[7] = {
+    0x1C,
+    0x3E,
+    0x7F,
+    0x7F,
+    0x7F,
+    0x3E,
+    0x1C,
+};
+
+/// Bullet explosions.
+static const uint8_t *const bullet_explosions_1x7[4] = {
+    blt_expl0,
+    blt_expl1,
+    blt_expl2,
+    blt_expl2,
+};
+
+/// 2913:1923                       proc_23         proc    near
+static void explode_bullets(unsigned vidSeg) {
+  uint8_t egaMask = g_ega_mask;
+
+  int actor = NUM_ACTORS32 - 2;
+  do {
+    uint8_t flags = bullet_flags[actor];
+
+    if ((flags & 0x80) != 0 || flags == 0)
+      continue;
+
+    --flags;
+    if (flags == 0) {
+      bullet_flags[actor] = 0xFF;
+      continue;
+    }
+
+    bullet_flags[actor] = flags;
+
+    if (flags < 2)
+      continue;
+
+    int y = bullet_y[actor] + 7;
+    if (y > MAZE_SCREEN_H + 7)
+      continue;
+
+    y -= 10;
+    int x = bullet_x[actor] + 3;
+    if (x > MAZE_SCREEN_W + 2)
+      continue;
+
+    const uint8_t *bmpPtr = bullet_explosions_1x7[flags - 2];
+
+    unsigned count = 7;
+    do {
+      // Flip speaker.
+      //                in      al,61h                  ; port 61h, 8255 port B, read
+      //                xor     al,var_180              ; (2913:2F66=2)
+      //                out     61h,al                  ; port 61h, 8255 B - spkr, etc
+
+      if (y >= 0 && y <= MAZE_SCREEN_H) {
+        unsigned vidOfs = vid_offset(x, y);
+        uint8_t vidMask = vid_mask(x);
+
+        unsigned bits = proc_26(*bmpPtr);
+        while (vidMask >>= 1)
+          bits <<= 1;
+
+        if (x - 8 >= 0 && x - 8 < MAZE_SCREEN_W)
+          ega_or(vidSeg + vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
+
+        if (x >= 0 && x < MAZE_SCREEN_W)
+          ega_or(vidSeg + vidOfs, (uint8_t)bits, egaMask);
+      }
+
+      ++y;
+      ++bmpPtr;
+    } while (--count);
+
+    playBoloSound(10, 7);
+  } while (--actor >= 0);
+}
+
+static const uint8_t bmp_expl0[21 * 3] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x3F, 0x80, 0x00, 0x3F,
+    0x80, 0x00, 0x3F, 0x80, 0x00, 0x1F, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t bmp_expl1[21 * 3] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x3F, 0x80, 0x00, 0x7F, 0xC0, 0x00, 0x7F,
+    0xC0, 0x00, 0x7F, 0xC0, 0x00, 0x3F, 0x80, 0x00, 0x1F, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t bmp_expl2[21 * 3] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x0E, 0x00, 0x00, 0x3F, 0x80, 0x00, 0x7F, 0xC0, 0x00, 0x7F, 0xC0, 0x00, 0xFF, 0xE0, 0x00, 0xFF,
+    0xE0, 0x00, 0xFF, 0xE0, 0x00, 0x7F, 0xC0, 0x00, 0x7F, 0xC0, 0x00, 0x3F, 0x80, 0x00, 0x0E, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t bmp_expl3[21 * 3] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00,
+    0x7F, 0xC0, 0x00, 0xFF, 0xE0, 0x00, 0xFF, 0xE0, 0x01, 0xFF, 0xF0, 0x01, 0xFF, 0xF0, 0x01, 0xFF,
+    0xF0, 0x01, 0xFF, 0xF0, 0x01, 0xFF, 0xF0, 0x00, 0xFF, 0xE0, 0x00, 0xFF, 0xE0, 0x00, 0x7F, 0xC0,
+    0x00, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t bmp_expl4[21 * 3] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x7F, 0xC0, 0x00,
+    0xFF, 0xE0, 0x01, 0xFF, 0xF0, 0x01, 0xFF, 0xF0, 0x03, 0xF1, 0xF8, 0x03, 0xE0, 0xF8, 0x03, 0xE0,
+    0xF8, 0x03, 0xE0, 0xF8, 0x03, 0xF1, 0xF8, 0x01, 0xFF, 0xF0, 0x01, 0xFF, 0xF0, 0x00, 0xFF, 0xE0,
+    0x00, 0x7F, 0xC0, 0x00, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t bmp_expl5[21 * 3] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x7F, 0xC0, 0x00, 0xFF, 0xE0, 0x01,
+    0xFF, 0xF0, 0x03, 0xFF, 0xF8, 0x03, 0xF1, 0xF8, 0x07, 0xE0, 0xFC, 0x07, 0xC0, 0x7C, 0x07, 0xC0,
+    0x7C, 0x07, 0xC0, 0x7C, 0x07, 0xE0, 0xFC, 0x03, 0xF1, 0xF8, 0x03, 0xFF, 0xF8, 0x01, 0xFF, 0xF0,
+    0x00, 0xFF, 0xE0, 0x00, 0x7F, 0xC0, 0x00, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t bmp_expl6[21 * 3] = {
+    0x00, 0x00, 0x00, 0x00, 0x3F, 0x80, 0x00, 0xFF, 0xE0, 0x01, 0xFF, 0xF0, 0x03, 0xF1, 0xF8, 0x07,
+    0xC0, 0x7C, 0x07, 0x80, 0x3C, 0x0F, 0x00, 0x1E, 0x0F, 0x00, 0x1E, 0x0E, 0x00, 0x0E, 0x0E, 0x00,
+    0x0E, 0x0E, 0x00, 0x0E, 0x0F, 0x00, 0x1E, 0x0F, 0x00, 0x1E, 0x07, 0x80, 0x3C, 0x07, 0xC0, 0x7C,
+    0x03, 0xF1, 0xF8, 0x01, 0xFF, 0xF0, 0x00, 0xFF, 0xE0, 0x00, 0x3F, 0x80, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t bmp_expl7[21 * 3] = {
+    0x00, 0x3F, 0x80, 0x00, 0x80, 0x20, 0x01, 0x00, 0x10, 0x02, 0x00, 0x08, 0x04, 0x00, 0x04, 0x08,
+    0x00, 0x02, 0x00, 0x00, 0x00, 0x10, 0x00, 0x01, 0x10, 0x00, 0x01, 0x10, 0x00, 0x01, 0x10, 0x00,
+    0x01, 0x10, 0x00, 0x01, 0x10, 0x00, 0x01, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00, 0x08, 0x00, 0x02,
+    0x04, 0x00, 0x04, 0x02, 0x00, 0x08, 0x01, 0x00, 0x10, 0x00, 0x80, 0x20, 0x00, 0x3F, 0x80,
+};
+
+/// Pointers to explosion bitmaps with decreasing radius (3x21 each).
+static const uint8_t *const explosions_3x21[8] = {
+    bmp_expl7,
+    bmp_expl6,
+    bmp_expl5,
+    bmp_expl4,
+    bmp_expl3,
+    bmp_expl2,
+    bmp_expl1,
+    bmp_expl0,
+};
+
+/// 2913:1A0B                       proc_24         proc    near
+static void draw_explosion(unsigned vidSeg, int actor) {
+  XYFlag xyf = rel_coords(ship_cellx[actor], ship_celly[actor], ship_ofsx[actor], ship_ofsy[actor]);
+  if (!xyf.success)
+    return;
+
+  uint8_t egaMask = g_ega_mask;
+
+  int x = xyf.x;
+  int y = xyf.y;
+
+  y -= 7;
+  x += 13;
+
+  const uint8_t *bmpPtr = explosions_3x21[var_188e[actor] - 3];
+
+  unsigned count = 21;
+  do {
+    // Sound flip.
+    //                in      al,61h                  ; port 61h, 8255 port B, read
+    //                xor     al,var_180              ; (2913:2F66=2)
+    //                out     61h,al                  ; port 61h, 8255 B - spkr, etc
+
+    if (y >= 0 && y <= MAZE_SCREEN_H) {
+      unsigned vidOfs = vid_offset(x, y);
+      uint8_t vidMask = vid_mask(x);
+
+      /// 24 screen pixels.
+      uint32_t bits;
+      bits = (uint32_t)proc_26(bmpPtr[0]) << 16;
+      bits += (uint32_t)proc_26(bmpPtr[1]) << 8;
+      bits += proc_26(bmpPtr[2]);
+
+      while (vidMask >>= 1)
+        bits <<= 1;
+
+      if (x - 24 >= 0 && x - 24 < MAZE_SCREEN_W)
+        ega_or(vidSeg + vidOfs - 3, (uint8_t)(bits >> 24), egaMask);
+
+      if (x - 16 >= 0 && x - 16 < MAZE_SCREEN_W)
+        ega_or(vidSeg + vidOfs - 2, (uint8_t)(bits >> 16), egaMask);
+
+      if (x - 8 >= 0 && x - 8 < MAZE_SCREEN_W)
+        ega_or(vidSeg + vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
+
+      if (x >= 0 && x < MAZE_SCREEN_W)
+        ega_or(vidSeg + vidOfs, (uint8_t)bits, egaMask);
+    }
+
+    bmpPtr += 3;
+    ++y;
+
+  } while (--count);
+
+  playBoloSound(20, 21);
+}
+
+/// 2913:1C74                       proc_25         proc    near
+static void proc_25(unsigned vidSeg) {
+  ega_map_mask(EGAYellow);
+  int actor = NUM_ACTORS42 - 1;
+  do {
+    if (coll_flags1[actor] == 0 || (coll_flags1[actor] & 0xE0) != 0)
+      continue;
+
+    if (var_188e[actor] >= 3)
+      draw_explosion(vidSeg, actor);
+
+    if (--var_188e[actor])
+      continue;
+
+    coll_flags1[actor] = 0xFF;
+
+    if (actor < NUM_ACTORS32 && actor != 0)
+      remove_actor(actor);
+  } while (--actor >= 0);
+
+  explode_bullets(vidSeg);
+}
+
+/// Obtain a random value from var_142[64] and mask it with the supplied mask.
+/// 2913:1CB3                       proc_26         proc    near
+static uint8_t proc_26(uint8_t mask) {
+  static const uint8_t var_142[64] = {
+      0xFE, 0xFD, 0xFB, 0xF7, 0xEF, 0xDF, 0xBF, 0xFF, 0xFE, 0xFD, 0xFB, 0xF7, 0xEF,
+      0xDF, 0xBF, 0xFF, 0xFE, 0xFD, 0xFB, 0xF7, 0xEF, 0xDF, 0xBF, 0xFF, 0xFA, 0xF6,
+      0xEE, 0xDE, 0xBE, 0xF5, 0xED, 0xDD, 0xBD, 0xEB, 0xDB, 0xBB, 0xD7, 0xB7, 0xAF,
+      0xFF, 0xEA, 0xDA, 0xBA, 0xD6, 0xB6, 0xAE, 0xD5, 0xB5, 0xAD, 0xAB, 0xFF, 0xFF,
+      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  };
+  return var_142[rnd_update(64)] & mask;
+}
+
 /// 2913:1CC7                       inc_fuel        proc    near
-static void inc_fuel(uint8_t dl) {}
+static void inc_fuel(uint8_t dl) {
+  // FIXME
+}
 
 /// Calculate and return a pointer to alist_buf element.
 /// Note that the parameters are deliberately signed. It works exactly like
@@ -1323,6 +1592,36 @@ static uint8_t *alist_xy(int8_t x, int8_t y) {
   int ofs = y * MAZE_WIDTH + x;
   assert(ofs >= -2);
   return alist_buf + ofs;
+}
+
+/// Insert the specified actor at front of the list in the specified cell.
+/// 2913:231E                       add_actor         proc    near
+static void add_actor(unsigned actor, int8_t cellX, int8_t cellY) {
+  uint8_t *pCellList = alist_xy(cellX, cellY);
+  uint8_t first = *pCellList;
+
+  next_actor[actor] = first;
+
+  if (first)
+    prev_actor[first] = actor;
+
+  *pCellList = actor;
+  prev_actor[actor] = 0;
+  pactor_list[actor] = pCellList;
+}
+
+/// Remove the specified actor from the linked list.
+/// 2913:2344                       proc_40         proc    near
+static void remove_actor(unsigned actor) {
+  uint8_t next = next_actor[actor];
+  if (prev_actor[actor] != 0) {
+    next_actor[prev_actor[actor]] = next;
+  } else {
+    assert(pactor_list[actor] && "pactor_list[actor] is null!");
+    *pactor_list[actor] = next;
+  }
+  if (next)
+    prev_actor[next] = prev_actor[actor];
 }
 
 /// Return a pseudo random value in the range [0..power-of-two).
@@ -1654,7 +1953,42 @@ static inline uint32_t nearest_pow2(uint32_t x) {
   return x + 1;
 }
 
+static void reset_game_state(void) {
+  memset(ship_angle, 0, sizeof(ship_angle));
+  memset(vel_magn, 0, sizeof(ship_angle));
+
+  memset(coll_flags1, 0, sizeof(coll_flags1));
+
+  // Mark all bullets as out of screen.
+  memset(bullet_flags, 0xFF, sizeof(bullet_flags));
+
+  // Not sure what this does.
+  memset(var_188e, 3, sizeof(var_188e));
+
+  vel_angle = 0;
+  gun_angle = 0;
+  ship_cellx[0] = 1;
+  ship_celly[0] = 3;
+  ship_ofsx[0] = CELL_SIZE / 2;
+  ship_ofsy[0] = CELL_SIZE / 2;
+}
+
+static void init_game_state(void) {
+  // title_screen();
+  // draw_hud();
+  // draw_levsel();
+  // clear_vp0();
+  // draw_hud();
+  // draw_levsel();
+  density = 4;
+  gen_maze();
+
+  reset_game_state();
+}
+
 static void bolo_init(void) {
+  init_game_state();
+
   saudio_setup(&(saudio_desc){
       //.sample_rate = 44100,
       //.buffer_frames = 2048,
@@ -1670,29 +2004,13 @@ static void bolo_init(void) {
   state.pass_action = (sg_pass_action){.colors[0] = {.action = SG_ACTION_CLEAR}};
 
   state.bind.fs_images[SLOT_tex] = sg_make_image(&(sg_image_desc){
-      .width = nearest_pow2(EGA_WIDTH),
-      .height = nearest_pow2(EGA_HEIGHT),
+      .width = EGA_WIDTH_POT,
+      .height = EGA_HEIGHT_POT,
       .usage = SG_USAGE_STREAM,
       .min_filter = SG_FILTER_LINEAR,
       .mag_filter = SG_FILTER_LINEAR,
       .label = "ega_image",
   });
-
-  // title_screen();
-  // draw_hud();
-  // draw_levsel();
-  // clear_vp0();
-  // draw_hud();
-  // draw_levsel();
-  density = 4;
-  gen_maze();
-  ship_cellx[0] = 1;
-  ship_celly[0] = 3;
-  ship_ofsx[0] = CELL_SIZE / 2;
-  ship_ofsy[0] = CELL_SIZE / 2;
-
-  // Mark all bullets as out of screen.
-  memset(bullet_flags, 0xFF, sizeof(bullet_flags));
 
   /*
    * Triangle strip:
@@ -1794,17 +2112,11 @@ static void render_test_frame(void) {
   clear_vp0();
   draw_hud();
   draw_maze(0);
+  proc_25(0);
 
-  draw_ship(0);
+  if (!coll_flags1[0]) {
+    draw_ship(0);
 
-  if (coll_flags1[0]) {
-    coll_flags1[0] = 0;
-    ship_cellx[0] = 1;
-    ship_celly[0] = 3;
-    ship_ofsx[0] = ship_ofsy[0] = CELL_SIZE / 2;
-    ship_dx = 0;
-    ship_dy = 0;
-  } else {
     ship_ofsx[0] += ship_dx;
     if (ship_ofsx[0] < 0) {
       ship_ofsx[0] += 38;
@@ -1829,12 +2141,6 @@ static void render_test_frame(void) {
   }
   update_bullets(0);
   adjust_bullets();
-
-  // Temp hack. Clear bullets that are supposed to explode.
-  for (unsigned i = 0; i != 31; ++i) {
-    if (bullet_flags[i] == 6)
-      bullet_flags[i] = 0xFF;
-  }
 }
 
 static void bolo_frame(void) {
@@ -1913,6 +2219,9 @@ static void bolo_event(const sapp_event *ev) {
     case SAPP_KEYCODE_RIGHT:
       ship_angle[0] = (ship_angle[0] + 1) & 7;
       gun_angle = (gun_angle + 1) & 7;
+      break;
+    case SAPP_KEYCODE_R:
+      reset_game_state();
       break;
     default:
       break;

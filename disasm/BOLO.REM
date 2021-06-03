@@ -214,7 +214,7 @@ end
                 al: a random number in the range [0..AL).
                 zf: test AL
 16                                 rnd_update
-        Inputs: AX: mask + 1
+        Inputs: AL: mask + 1
         Return: AL (something) and ZF
         I am not sure but I think this routine shuffles the random generator
         state while also taking the current time into consideration.
@@ -248,7 +248,7 @@ end
         Preserve: DX,  BP. Unless inc_fuel is invoked, also CX, and sets BX to BP.
         Check the actors in the specified cell list for collision against the
         specified object. Update the corresponding flags.
-1D                                abs_coords
+1D                                rel_coords
         Input:
                 BL, BH: cell x,y
                 DL, DH: offset x, y
@@ -257,4 +257,9 @@ end
                 CF: 0 on success
         Convert absolute coordinates (cell and offset) into screen relative coords.
         If the coords are not in the screen, set CF and return 0FFh, 0FFh.
+1E                                proc_26
+        Input: AL
+        Output: AL
+        Preserve: AH, BX, DX
+        Obtain a random value from var_142[64], mask it with AL and return it.
 end

@@ -103,14 +103,14 @@ seg_a:1623   sub, c 1A          update_bullets
 seg_a:169C   sub, c 19          adjust_bullets
 seg_a:16F0   sub                shoot_bullet    Shoot a bullet from actor di
 seg_a:1762   sub, c 18          in_screen
-seg_a:1770   sub, c 1D          abs_coords
+seg_a:1770   sub, c 1D          rel_coords
 seg_a:17CC   sub                div_cell_size   Divide bl,by by 38, return quot (bx) and rem (dx) for both.
 seg_a:17EF   sub, c 1B          bullet_collide
 seg_a:1893   sub, c 1C          collide_cell
-seg_a:1923   sub                proc_23
-seg_a:1A0B   sub                proc_24
+seg_a:1923   sub                explode_bullets
+seg_a:1A0B   sub                draw_explosion
 seg_a:1C74   sub                proc_25
-seg_a:1CB3   sub                proc_26
+seg_a:1CB3   sub, c 1E          proc_26
 seg_a:1CC7   sub, c 12          inc_fuel        Update the fuel level based on DL
 seg_a:1D17   sub                update_hisco    Update values of high score, level and density
 seg_a:1D5A   sub                proc_27
@@ -126,8 +126,8 @@ seg_a:2244   sub                proc_36
 seg_a:22AB   sub                proc_37
 seg_a:22EC   sub                proc_38
 seg_a:2305   sub, c 01          alist_readxy
-seg_a:231E   sub                proc_39
-seg_a:2344   sub                proc_40
+seg_a:231E   sub                add_actor       Add actor SI to list of cell BL, BH
+seg_a:2344   sub                remove_actor    Remove actor SI from the linked list
 seg_a:2379   sub                proc_41
 seg_a:24CD   sub                proc_42
 seg_a:26ED   sub                proc_43
@@ -166,8 +166,8 @@ seg_a:0100   loc, far           start
 seg_a:0107   forced, od
 seg_a:010D   loc                                ; loc_1
 seg_a:0117   forced, od
-seg_a:011D   loc                                ; loc_2
 seg_a:011D   forced, od 0000
+seg_a:011D   loc                                ; loc_2
 seg_a:0120   forced, od seg_a
 seg_a:012A   forced, od seg_a
 seg_a:012D   loc                                ; locloop_3
@@ -478,8 +478,8 @@ seg_a:1FA6   loc                                ; loc_232
 seg_a:1FA8   loc                                ; loc_233
 seg_a:1FB0   loc                                ; loc_234
 seg_a:1FB2   loc                                ; loc_235
-seg_a:1FCB   loc                                ; loc_236
 seg_a:1FCB   forced, od seg_a
+seg_a:1FCB   loc                                ; loc_236
 seg_a:1FCE   loc                                ; loc_237
 seg_a:1FDA   loc                                ; loc_238
 seg_a:1FEA   loc                                ; loc_239
@@ -668,8 +668,8 @@ seg_a:2D1F   loc                                ; loc_396
 seg_a:2D22   loc                                ; loc_397
 seg_a:2D2E   loc                                ; loc_398
 seg_a:2D51   loc                                ; loc_399
-seg_a:2D63   loc                                ; loc_400
 seg_a:2D63   forced, od seg_a
+seg_a:2D63   loc                                ; loc_400
 seg_a:2D78   loc                                ; loc_401
 seg_a:2D88   loc                                ; loc_402
 seg_a:2D9E   loc                                ; loc_403
@@ -837,8 +837,20 @@ seg_a:15CD   da, r 0A           var_137
 seg_a:15F2   db                 var_138
 seg_a:160C   db                 var_139
 seg_a:1752   dw, r 8            bullet_start    Start offset of the bullet depending on angle
+seg_a:19AE   dw, odn, r 4       blt_expl1x7
+seg_a:19B6   db                 blt_expl0
+seg_a:19BD   db                 blt_expl1
+seg_a:19C4   db                 blt_expl2
 seg_a:19CB   db                 var_142
-seg_a:1C30   db, r 44           var_151
+seg_a:1AAB   dw, odn, r 8       bmp_expl3x21
+seg_a:1ABB   db                 bmp_expl0
+seg_a:1AE8   db                 bmp_expl1
+seg_a:1B18   db                 bmp_expl2
+seg_a:1B4B   db                 bmp_expl3
+seg_a:1B81   db                 bmp_expl4
+seg_a:1BBA   db                 bmp_expl5
+seg_a:1BF6   db                 bmp_expl6
+seg_a:1C35   db                 bmp_expl7
 seg_a:1DE5   db                 var_152
 seg_a:1DF4   db                 var_153
 seg_a:1FBB   db                 var_155
@@ -898,8 +910,8 @@ seg_a:2F68   db, r 20           rnd_state       Possibly the state of the random
 2913:50B7    db, equ, index     vel_magn_e
 2913:50D7    db, equ, index     ship_angle_e    0 to 7
 2913:50F7    db, equ, index     next_actor_e
-2913:5117    db, equ, index     var_191e
-2913:5137    dw, equ, index     var_192e
+2913:5117    db, equ, index     prev_actor_e
+2913:5137    dw, equ, index     pactor_list_e
 2913:5177    db, equ, index     gun_angle_e     0 to 7
 2913:5178    db, equ, index     vel_angle_e
 2913:5179    db, equ, index     bullet_x_e
