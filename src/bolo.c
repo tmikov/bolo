@@ -176,7 +176,7 @@ static uint8_t coll_flags1[NUM_ACTORS42];
 /// Unknown.
 static uint8_t var_188e[NUM_ACTORS42]; // 506Dh
 /// Unknown.
-static uint8_t var_189e[NUM_ACTORS32]; // 5097h
+static uint8_t ship_kind[NUM_ACTORS32]; // 5097h
 /// Ship velocity magnitude [0..5]
 static uint8_t vel_magn[NUM_ACTORS32]; // 50B7h
 /// Ship angle [0..7]. N, NE, E, SE, S, SW, W, NW.
@@ -207,12 +207,10 @@ static uint8_t bullet_angle[NUM_ACTORS32]; // 51D9h
 /// actors (0 being the ship) firing.
 static uint8_t maybe_fire[NUM_ACTORS32]; // 51F9h
 
-static struct {
-  uint8_t var_194e[6]; // 521Ah
-  uint8_t var_195e[6]; // 5220h
-  uint8_t var_196e[6]; // 5226h
-  uint8_t var_197e[18]; // 522Ch
-} un1;
+uint8_t var_194e[6]; // 521Ah
+uint8_t var_195e[6]; // 5220h
+uint8_t var_196e[6]; // 5226h
+uint8_t var_197e[18]; // 522Ch
 static uint16_t var_198e; // 523Eh
 
 static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
@@ -842,7 +840,7 @@ static void draw_ship(unsigned pageSeg) {
     coll_flags1[0] = 1;
     // Stop the ship.
     vel_magn[0] = 0;
-    var_189e[0] = 0xA;
+    ship_kind[0] = 0xA;
   }
 }
 
@@ -1308,7 +1306,7 @@ static void collide_cell(
       continue;
 
     if (coll70)
-      un1.var_194e[coll_flags1[act] & 0x0F] = 0;
+      var_194e[coll_flags1[act] & 0x0F] = 0;
 
     var_188e[act] = 0x0A;
     coll_flags1[act] = 1;
@@ -1394,7 +1392,7 @@ static void explode_bullets(unsigned vidSeg) {
       //                out     61h,al                  ; port 61h, 8255 B - spkr, etc
 
       if (y >= 0 && y <= MAZE_SCREEN_H) {
-        unsigned vidOfs = vid_offset(x, y);
+        unsigned vidOfs = vid_offset(x, y) + vidSeg;
         uint8_t vidMask = vid_mask(x);
 
         unsigned bits = proc_26(*bmpPtr);
@@ -1402,10 +1400,10 @@ static void explode_bullets(unsigned vidSeg) {
           bits <<= 1;
 
         if (x - 8 >= 0 && x - 8 < MAZE_SCREEN_W)
-          ega_or(vidSeg + vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
+          ega_or(vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
 
         if (x >= 0 && x < MAZE_SCREEN_W)
-          ega_or(vidSeg + vidOfs, (uint8_t)bits, egaMask);
+          ega_or(vidOfs, (uint8_t)bits, egaMask);
       }
 
       ++y;
@@ -1508,7 +1506,7 @@ static void draw_explosion(unsigned vidSeg, int actor) {
     //                out     61h,al                  ; port 61h, 8255 B - spkr, etc
 
     if (y >= 0 && y <= MAZE_SCREEN_H) {
-      unsigned vidOfs = vid_offset(x, y);
+      unsigned vidOfs = vid_offset(x, y) + vidSeg;
       uint8_t vidMask = vid_mask(x);
 
       /// 24 screen pixels.
@@ -1521,16 +1519,16 @@ static void draw_explosion(unsigned vidSeg, int actor) {
         bits <<= 1;
 
       if (x - 24 >= 0 && x - 24 < MAZE_SCREEN_W)
-        ega_or(vidSeg + vidOfs - 3, (uint8_t)(bits >> 24), egaMask);
+        ega_or(vidOfs - 3, (uint8_t)(bits >> 24), egaMask);
 
       if (x - 16 >= 0 && x - 16 < MAZE_SCREEN_W)
-        ega_or(vidSeg + vidOfs - 2, (uint8_t)(bits >> 16), egaMask);
+        ega_or(vidOfs - 2, (uint8_t)(bits >> 16), egaMask);
 
       if (x - 8 >= 0 && x - 8 < MAZE_SCREEN_W)
-        ega_or(vidSeg + vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
+        ega_or(vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
 
       if (x >= 0 && x < MAZE_SCREEN_W)
-        ega_or(vidSeg + vidOfs, (uint8_t)bits, egaMask);
+        ega_or(vidOfs, (uint8_t)bits, egaMask);
     }
 
     bmpPtr += 3;
@@ -1622,6 +1620,81 @@ static void remove_actor(unsigned actor) {
   }
   if (next)
     prev_actor[next] = prev_actor[actor];
+}
+
+/// The index of every sprite in sprites_1x7 divided by 7
+static const uint8_t sprite_index[37] = {
+    0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x08, 0x18, 0x00, 0x18, 0x08, 0x18,
+    0x08, 0x18, 0x08, 0x18, 0x08, 0x20, 0x08, 0x18, 0x08, 0x20, 0x10, 0x18, 0x08,
+    0x20, 0x10, 0x20, 0x08, 0x20, 0x10, 0x20, 0x28, 0x10, 0x20, 0x28,
+};
+
+/// 2913:24CD                       proc_42         proc    near
+static void draw_enemies(unsigned vidSeg) {
+  ega_map_mask(EGAHighGreen);
+
+  for (unsigned actor = NUM_ACTORS32; --actor;) {
+    uint8_t flags = coll_flags1[actor];
+    if ((flags & 0x80) || flags != 0 && (flags & 0x60) == 0)
+      continue;
+
+    XYFlag xyf =
+        rel_coords(ship_cellx[actor], ship_celly[actor], ship_ofsx[actor], ship_ofsy[actor]);
+    if (!xyf.success)
+      continue;
+
+    uint8_t x = xyf.x;
+    uint8_t y = xyf.y;
+
+    x += 7;
+    if (x >= MAZE_SCREEN_W + 7)
+      continue;
+    if (y + 7 >= MAZE_SCREEN_H + 8)
+      continue;
+    const uint8_t *bmpPtr = sprites_1x7 + (sprite_index[ship_kind[actor]] + ship_angle[actor]) * 7;
+
+    uint8_t collision = 0;
+
+    unsigned count = 7;
+    do {
+      unsigned bits = *bmpPtr++;
+      if (y > MAZE_SCREEN_H)
+        continue;
+      unsigned vidOfs = vid_offset(x, y) + vidSeg;
+      uint8_t vidMask = vid_mask(x);
+      while (vidMask >>= 1)
+        bits <<= 1;
+
+      if (x < MAZE_SCREEN_W) {
+        collision |= ega_read(vidOfs) & (uint8_t)bits;
+        ega_or(vidOfs, (uint8_t)bits, EGAHighGreen);
+      }
+
+      if (x - 8 >= 0 && x - 8 < MAZE_SCREEN_W) {
+        --vidOfs;
+        collision |= ega_read(vidOfs) & (uint8_t)(bits >> 8);
+        ega_or(vidOfs, (uint8_t)(bits >> 8), EGAHighGreen);
+      }
+    } while (++y, --count);
+
+    if (!collision)
+      continue;
+
+    uint8_t cFlags = coll_flags1[actor];
+    if ((cFlags & 0xF0) == 0x60)
+      continue;
+
+    var_188e[actor] = 0x0A;
+
+    if (cFlags & 0x70)
+      var_194e[cFlags & 0x0F] = cFlags & 0xF0;
+
+    coll_flags1[actor] = 1;
+
+    inc_fuel(1);
+    // Restore the EGA mask (probably not really neccessary).
+    ega_map_mask(EGAHighGreen);
+  }
 }
 
 /// Return a pseudo random value in the range [0..power-of-two).
@@ -1954,10 +2027,19 @@ static inline uint32_t nearest_pow2(uint32_t x) {
 }
 
 static void reset_game_state(void) {
+  memset(alist_buf, 0, MAZE_WIDTH * MAZE_HEIGHT);
+  memset(prev_actor, 0, sizeof(prev_actor));
+  memset(next_actor, 0, sizeof(next_actor));
+  memset(pactor_list, 0, sizeof(pactor_list));
   memset(ship_angle, 0, sizeof(ship_angle));
   memset(vel_magn, 0, sizeof(ship_angle));
+  memset(ship_cellx, 0, sizeof(ship_cellx));
+  memset(ship_celly, 0, sizeof(ship_celly));
+  memset(ship_ofsx, 0, sizeof(ship_ofsx));
+  memset(ship_ofsy, 0, sizeof(ship_ofsy));
 
-  memset(coll_flags1, 0, sizeof(coll_flags1));
+  memset(coll_flags1, 0x80, sizeof(coll_flags1));
+  coll_flags1[0] = 0;
 
   // Mark all bullets as out of screen.
   memset(bullet_flags, 0xFF, sizeof(bullet_flags));
@@ -1971,6 +2053,26 @@ static void reset_game_state(void) {
   ship_celly[0] = 3;
   ship_ofsx[0] = CELL_SIZE / 2;
   ship_ofsy[0] = CELL_SIZE / 2;
+
+  unsigned actor = 1;
+  add_actor(actor, 1, 5);
+  ship_cellx[actor] = 1;
+  ship_celly[actor] = 5;
+  ship_ofsx[actor] = CELL_SIZE / 2;
+  ship_ofsy[actor] = CELL_SIZE / 2;
+  coll_flags1[actor] = 0;
+  ship_kind[actor] = 0;
+  ship_angle[actor] = 1;
+
+  ++actor;
+  add_actor(actor, 1, 5);
+  ship_cellx[actor] = 1;
+  ship_celly[actor] = 5;
+  ship_ofsx[actor] = 8;
+  ship_ofsy[actor] = 0;
+  coll_flags1[actor] = 0;
+  ship_kind[actor] = 30;
+  ship_angle[actor] = 0;
 }
 
 static void init_game_state(void) {
@@ -2113,6 +2215,7 @@ static void render_test_frame(void) {
   draw_hud();
   draw_maze(0);
   proc_25(0);
+  draw_enemies(0);
 
   if (!coll_flags1[0]) {
     draw_ship(0);

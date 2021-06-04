@@ -1,4 +1,4 @@
-            BOLO.LST                                            Sourcer v8.01   2-Jun-2021  9:44 pm   Page 1
+            BOLO.LST                                            Sourcer v8.01   3-Jun-2021  3:17 pm   Page 1
 
 
                                 PAGE  59,132
@@ -19,7 +19,7 @@
 
      = 0020                     var_1e          equ     20h                     ; (0000:0020=0A5h)
      = 00CA                     var_2e          equ     0CAh                    ; (0000:00CA=0)
-     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=0BF40h)
+     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=4934h)
      = 0487                     video_options_  equ     487h                    ; (0000:0487=60h)
      = 5487                     var_3e          equ     5487h                   ;*(0200:5487=74h)
      = 0005                     var_4e          equ     5                       ; (2913:0005=0)
@@ -50,7 +50,7 @@
      = 5043                     coll_flags1_e   equ     5043h                   ;*(2913:5043=0)
      = 5063                     var_187e        equ     5063h                   ;*(2913:5063=0)
      = 506D                     var_188e        equ     506Dh                   ;*(2913:506D=0)
-     = 5097                     var_189e        equ     5097h                   ;*(2913:5097=0)
+     = 5097                     ship_kind_e     equ     5097h                   ;*(2913:5097=0)
      = 50B7                     vel_magn_e      equ     50B7h                   ;*(2913:50B7=0)
      = 50D7                     ship_angle_e    equ     50D7h                   ;*(2913:50D7=0)
      = 50F7                     next_actor_e    equ     50F7h                   ;*(2913:50F7=0)
@@ -127,12 +127,12 @@
 2913:012D                       locloop_3:                                      ;  xref 2913:0136
 2913:012D  F6 C1 03                             test    cl,3
 2913:0130  75 03                                jnz     loc_4
-2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=41h)
+2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=34h)
 2913:0135                       loc_4:                                          ;  xref 2913:0130
 2913:0135  A4                                   movsb
 2913:0136  E2 F5                                loop    locloop_3
 
-2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=41h)
+2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=34h)
 2913:013B  0E                                   push    cs
 2913:013C  1F                                   pop     ds
 2913:013D  24 1F                                and     al,1Fh
@@ -257,7 +257,7 @@
                                                                                 ;  al = 3, data rotate
 2913:023F  E8 1A32                              call    proc_25                 ; (1C74)
 2913:0242  E8 1D7A                              call    proc_31                 ; (1FBF)
-2913:0245  E8 2285                              call    proc_42                 ; (24CD)
+2913:0245  E8 2285                              call    draw_enemies            ; (24CD)
 2913:0248  80 3E 5043 00                        cmp     byte ptr ds:coll_flags1_e,0 ; (2913:5043=0)
 2913:024D  75 03                                jne     loc_15
 2913:024F  E8 0AD0                              call    draw_ship               ; (0D22)
@@ -270,9 +270,9 @@
 2913:025C  80 3E 5043 FE                        cmp     byte ptr ds:coll_flags1_e,0FEh ; (2913:5043=0)
 2913:0261  74 0E                                je      loc_16
 2913:0263  32 C0                                xor     al,al
-2913:0265  38 06 5097                           cmp     ds:var_189e,al          ; (2913:5097=0)
+2913:0265  38 06 5097                           cmp     ds:ship_kind_e,al       ; (2913:5097=0)
 2913:0269  74 12                                je      loc_18
-2913:026B  FE 0E 5097                           dec     byte ptr ds:var_189e    ; (2913:5097=0)
+2913:026B  FE 0E 5097                           dec     byte ptr ds:ship_kind_e ; (2913:5097=0)
 2913:026F  75 1D                                jnz     loc_19
 2913:0271                       loc_16:                                         ;  xref 2913:0261
 2913:0271  FE 0E 4F96                           dec     byte ptr ds:lives_e     ; (2913:4F96=0)
@@ -285,7 +285,7 @@
 2913:0281  74 0B                                je      loc_19
 2913:0283  A2 50B7                              mov     ds:vel_magn_e,al        ; (2913:50B7=0)
 2913:0286  79 06                                jns     loc_19
-2913:0288  C6 06 5097 0A                        mov     byte ptr ds:var_189e,0Ah ; (2913:5097=0)
+2913:0288  C6 06 5097 0A                        mov     byte ptr ds:ship_kind_e,0Ah ; (2913:5097=0)
 2913:028D  90                                   nop
 2913:028E                       loc_19:                                         ;  xref 2913:026F, 0281, 0286, 0295
 2913:028E  A0 2F67                              mov     al,time_tick            ; (2913:2F67=0)
@@ -1840,7 +1840,7 @@
 2913:0D07  32 C0                                xor     al,al
 2913:0D09  A2 5043                              mov     ds:coll_flags1_e,al     ; (2913:5043=0)
 2913:0D0C  A2 5178                              mov     ds:vel_angle_e,al       ; (2913:5178=0)
-2913:0D0F  A2 5097                              mov     ds:var_189e,al          ; (2913:5097=0)
+2913:0D0F  A2 5097                              mov     ds:ship_kind_e,al       ; (2913:5097=0)
 2913:0D12  A2 50B7                              mov     ds:vel_magn_e,al        ; (2913:50B7=0)
 2913:0D15  E8 FEDD                              call    draw_comp_arr           ; (0BF5)
 2913:0D18  E8 FDB1                              call    proc_13                 ; (0ACC)
@@ -1899,7 +1899,7 @@
 2913:0D6E  90                                   nop
 2913:0D6F  C6 06 50B7 00                        mov     byte ptr ds:vel_magn_e,0 ; (2913:50B7=0)
 2913:0D74  90                                   nop
-2913:0D75  C6 06 5097 0A                        mov     byte ptr ds:var_189e,0Ah ; (2913:5097=0)
+2913:0D75  C6 06 5097 0A                        mov     byte ptr ds:ship_kind_e,0Ah ; (2913:5097=0)
 2913:0D7A  90                                   nop
 2913:0D7B  C3                                   retn
                                 draw_ship       endp
@@ -2688,7 +2688,7 @@
 2913:14AE  E8 007A                              call    proc_18                 ; (152B)
 2913:14B1  73 F8                                jnc     loc_116
 2913:14B3 .BB 15CD                              mov     bx,offset var_137       ; (2913:15CD='*(((&&&&&')
-2913:14B6  8A 85 5097                           mov     al,ds:var_189e[di]      ; (2913:5097=0)
+2913:14B6  8A 85 5097                           mov     al,ds:ship_kind_e[di]   ; (2913:5097=0)
 2913:14BA  D7                                   xlat
 2913:14BB  E8 1A3C                              call    rndnum                  ; (2EFA)
 2913:14BE  75 64                                jnz     loc_120
@@ -4800,7 +4800,7 @@
 2913:241D                       loc_279:                                        ;  xref 2913:2416
 2913:241D  5B                                   pop     bx
 2913:241E  02 A7 247A                           add     ah,var_161[bx]          ; (2913:247A=0)
-2913:2422  88 A4 5097                           mov     ds:var_189e[si],ah      ; (2913:5097=0)
+2913:2422  88 A4 5097                           mov     ds:ship_kind_e[si],ah   ; (2913:5097=0)
 2913:2426  8A DC                                mov     bl,ah
 2913:2428  8A 87 2483                           mov     al,var_162[bx]          ; (2913:2483=1)
 2913:242C  88 84 50B7                           mov     ds:vel_magn_e[si],al    ; (2913:50B7=0)
@@ -4851,23 +4851,23 @@
 2913:2496  03 02 04 03 05 02                    db      3, 2, 4, 3, 5, 2
 2913:249C  04 03 05 04 04 03                    db      4, 3, 5, 4, 4, 3
 2913:24A2  05 04 05 05 04 05                    db      5, 4, 5, 5, 4, 5
-2913:24A8  00                   var_163         db      0                       ; Data table (indexed access)
+2913:24A8  00 00 00 18 00 00    sprite_index    db       00h, 00h, 00h, 18h, 00h, 00h ; (Index of each sprite (in 8 directio
+                                                                                ; ns) in sprites_1x7) / 7
                                                                                 ;  xref 2913:2515
-2913:24A9  00 00 18 00 00 18                    db       00h, 00h, 18h, 00h, 00h, 18h
-2913:24AF  08 18 00 18 08 18                    db       08h, 18h, 00h, 18h, 08h, 18h
-2913:24B5  08 18 08 18 08 20                    db       08h, 18h, 08h, 18h, 08h, 20h
-2913:24BB  08 18 08 20 10 18                    db       08h, 18h, 08h, 20h, 10h, 18h
-2913:24C1  08 20 10 20 08 20                    db       08h, 20h, 10h, 20h, 08h, 20h
-2913:24C7  10 20 28 10                          db       10h, 20h, 28h, 10h
-2913:24CB  20 28                                db       20h, 28h
+2913:24AE  18 08 18 00 18 08                    db       18h, 08h, 18h, 00h, 18h, 08h
+2913:24B4  18 08 18 08 18 08                    db       18h, 08h, 18h, 08h, 18h, 08h
+2913:24BA  20 08 18 08 20 10                    db       20h, 08h, 18h, 08h, 20h, 10h
+2913:24C0  18 08 20 10 20 08                    db       18h, 08h, 20h, 10h, 20h, 08h
+2913:24C6  20 10 20 28 10 20                    db       20h, 10h, 20h, 28h, 10h, 20h
+2913:24CC  28                                   db       28h
 
                                 ;==========================================================================
-                                ;                          proc_42
+                                ;                          draw_enemies
                                 ;
                                 ;         Called from:   2913:0245
                                 ;==========================================================================
 
-2913:24CD                       proc_42         proc    near
+2913:24CD                       draw_enemies    proc    near
 2913:24CD  BD 0020                              mov     bp,20h
 2913:24D0                       loc_281:                                        ;  xref 2913:2599
 2913:24D0 ,B4 0A                                mov     ah,0Ah
@@ -4899,10 +4899,10 @@
 2913:2508  02 C1                                add     al,cl
 2913:250A  3C C7                                cmp     al,0C7h
 2913:250C  73 C7                                jae     loc_282
-2913:250E  8A 86 5097                           mov     al,ss:var_189e[bp]      ; (2913:5097=0)
+2913:250E  8A 86 5097                           mov     al,ss:ship_kind_e[bp]   ; (2913:5097=0)
 2913:2512  98                                   cbw
 2913:2513  8B F0                                mov     si,ax
-2913:2515  8A 84 24A8                           mov     al,var_163[si]          ; (2913:24A8=0)
+2913:2515  8A 84 24A8                           mov     al,sprite_index[si]     ; (2913:24A8=0)
 2913:2519  02 86 50D7                           add     al,ss:ship_angle_e[bp]  ; (2913:50D7=0)
 2913:251D  8B F0                                mov     si,ax
 2913:251F  D1 E6                                shl     si,1
@@ -4969,7 +4969,7 @@
 2913:2596  E8 F72E                              call    inc_fuel                ; (1CC7)
 2913:2599                       loc_291:                                        ;  xref 2913:256C, 257A
 2913:2599  E9 FF34                              jmp     loc_281                 ; (24D0)
-                                proc_42         endp
+                                draw_enemies    endp
 
 2913:259C  C3                                   db      0C3h
 2913:259D  10 10 38 6C C6 82    sprites_1x7     db       10h, 10h, 38h, 6Ch,0C6h, 82h ;  xref 2913:11AC, 2527
@@ -5094,7 +5094,7 @@
 2913:275A  84 F6                                test    dh,dh
 2913:275C  79 92                                jns     loc_292
 2913:275E  51                                   push    cx
-2913:275F  8A 84 5097                           mov     al,ds:var_189e[si]      ; (2913:5097=0)
+2913:275F  8A 84 5097                           mov     al,ds:ship_kind_e[si]   ; (2913:5097=0)
 2913:2763  98                                   cbw
 2913:2764  8B D8                                mov     bx,ax
 2913:2766  38 A7 2927                           cmp     var_164[bx],ah          ; (2913:2927=0)

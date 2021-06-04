@@ -129,7 +129,7 @@ seg_a:2305   sub, c 01          alist_readxy
 seg_a:231E   sub                add_actor       Add actor SI to list of cell BL, BH
 seg_a:2344   sub                remove_actor    Remove actor SI from the linked list
 seg_a:2379   sub                proc_41
-seg_a:24CD   sub                proc_42
+seg_a:24CD   sub                draw_enemies
 seg_a:26ED   sub                proc_43
 seg_a:28B8   sub                proc_44
 seg_a:294C   sub                proc_45
@@ -859,7 +859,7 @@ seg_a:2458   db                 var_159
 seg_a:245C   dw                 var_160
 seg_a:247A   db                 var_161
 seg_a:2483   db                 var_162
-seg_a:24A8   db                 var_163
+seg_a:24A8   db, r 25           sprite_index    (Index of each sprite (in 8 directions) in sprites_1x7) / 7
 seg_a:259D   db, r 150          sprites_1x7
 seg_a:2927   db                 var_164
 seg_a:2970   dw, osn            var_165
@@ -906,7 +906,7 @@ seg_a:2F68   db, r 20           rnd_state       Possibly the state of the random
 2913:5043    db, equ, index     coll_flags1_e
 2913:5063    db, equ, index     var_187e
 2913:506D    db, equ, index     var_188e
-2913:5097    db, equ, index     var_189e
+2913:5097    db, equ, index     ship_kind_e
 2913:50B7    db, equ, index     vel_magn_e
 2913:50D7    db, equ, index     ship_angle_e    0 to 7
 2913:50F7    db, equ, index     next_actor_e
