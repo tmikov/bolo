@@ -1,4 +1,4 @@
-            BOLO.LST                                            Sourcer v8.01   3-Jun-2021  3:17 pm   Page 1
+            BOLO.LST                                            Sourcer v8.01   6-Jun-2021  6:43 pm   Page 1
 
 
                                 PAGE  59,132
@@ -19,7 +19,7 @@
 
      = 0020                     var_1e          equ     20h                     ; (0000:0020=0A5h)
      = 00CA                     var_2e          equ     0CAh                    ; (0000:00CA=0)
-     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=4934h)
+     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=0BA88h)
      = 0487                     video_options_  equ     487h                    ; (0000:0487=60h)
      = 5487                     var_3e          equ     5487h                   ;*(0200:5487=74h)
      = 0005                     var_4e          equ     5                       ; (2913:0005=0)
@@ -35,7 +35,7 @@
      = 4087                     var_181e        equ     4087h                   ;*(2913:4087=0)
      = 4F89                     var_182e        equ     4F89h                   ;*(2913:4F89=0)
      = 4F8A                     dest_seg_e      equ     4F8Ah                   ;*(2913:4F8A=0)
-     = 4F8C                     var_184e        equ     4F8Ch                   ;*(2913:4F8C=0)
+     = 4F8C                     last_tick       equ     4F8Ch                   ;*(2913:4F8C=0)
      = 4F8D                     orig_int8_e     equ     4F8Dh                   ;*(2913:4F8D=0)
      = 4F91                     orig_int9_e     equ     4F91h                   ;*(2913:4F91=0)
      = 4F95                     kbdin_key_e     equ     4F95h                   ;*(2913:4F95=0)
@@ -62,12 +62,14 @@
      = 5199                     bullet_y_e      equ     5199h                   ;*(2913:5199=0)
      = 51B9                     bullet_fl_e     equ     51B9h                   ;*(2913:51B9=0)
      = 51D9                     bullet_angle_e  equ     51D9h                   ;*(2913:51D9=0)
-     = 51F9                     maybe_fire_e    equ     51F9h                   ;*(2913:51F9=0)
-     = 5219                     var_193e        equ     5219h                   ;*(2913:5219=0)
-     = 521A                     var_194e        equ     521Ah                   ;*(2913:521A=0)
-     = 5220                     var_195e        equ     5220h                   ;*(2913:5220=0)
-     = 5226                     var_196e        equ     5226h                   ;*(2913:5226=0)
-     = 522C                     var_197e        equ     522Ch                   ;*(2913:522C=0)
+     = 51F9                     ship_fire_e     equ     51F9h                   ;*(2913:51F9=0)
+     = 5219                     fire_req_e      equ     5219h                   ;*(2913:5219=0)
+     = 521A                     base_194e       equ     521Ah                   ;*(2913:521A=0)
+     = 5220                     base_cellx_e    equ     5220h                   ;*(2913:5220=0)
+     = 5226                     base_celly_e    equ     5226h                   ;*(2913:5226=0)
+     = 522C                     base_cellfl_e   equ     522Ch                   ;*(2913:522C=0)
+     = 5232                     arr_1e          equ     5232h                   ;*(2913:5232=0)
+     = 5238                     arr_2e          equ     5238h                   ;*(2913:5238=0)
      = 523E                     var_198e        equ     523Eh                   ;*(2913:523E=0)
      = 5240                     var_199e        equ     5240h                   ;*(2913:5240=0)
      = 529D                     var_200e        equ     529Dh                   ;*(2913:529D=0)
@@ -83,7 +85,7 @@
      = 545E                     var_210e        equ     545Eh                   ;*(2913:545E=0)
      = 545F                     var_211e        equ     545Fh                   ;*(2913:545F=0)
      = 5467                     var_212e        equ     5467h                   ;*(2913:5467=0)
-     = 5487                     var_213e        equ     5487h                   ;*(2913:5487=0)
+     = 5487                     buf49           equ     5487h                   ;*(2913:5487=0)
      = 54B8                     var_214e        equ     54B8h                   ;*(2913:54B8=0)
      = 54E0                     var_215e        equ     54E0h                   ;*(2913:54E0=0)
      = 5509                     var_216e        equ     5509h                   ;*(2913:5509=0)
@@ -127,12 +129,12 @@
 2913:012D                       locloop_3:                                      ;  xref 2913:0136
 2913:012D  F6 C1 03                             test    cl,3
 2913:0130  75 03                                jnz     loc_4
-2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=34h)
+2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=88h)
 2913:0135                       loc_4:                                          ;  xref 2913:0130
 2913:0135  A4                                   movsb
 2913:0136  E2 F5                                loop    locloop_3
 
-2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=34h)
+2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=88h)
 2913:013B  0E                                   push    cs
 2913:013C  1F                                   pop     ds
 2913:013D  24 1F                                and     al,1Fh
@@ -190,7 +192,7 @@
 2913:01AA  B9 002A                              mov     cx,2Ah
 2913:01AD  B0 FF                                mov     al,0FFh
 2913:01AF  F3/ AA                               rep     stosb
-2913:01B1 .BF 51F9                              mov     di,maybe_fire_e         ; (2913:51F9=0)
+2913:01B1 .BF 51F9                              mov     di,ship_fire_e          ; (2913:51F9=0)
 2913:01B4  B1 20                                mov     cl,20h                  ; ' '
 2913:01B6  40                                   inc     ax
 2913:01B7  F3/ AA                               rep     stosb
@@ -201,7 +203,7 @@
 2913:01C2  75 FA                                jne     loc_8
 2913:01C4                       loc_9:                                          ;  xref 2913:027A
 2913:01C4 ,E8 1032                              call    draw_hud                ; (11F9)
-2913:01C7  E8 0C2A                              call    proc_16                 ; (0DF4)
+2913:01C7  E8 0C2A                              call    draw_lives              ; (0DF4)
 2913:01CA  06                                   push    es
 2913:01CB  1E                                   push    ds
 2913:01CC  07                                   pop     es
@@ -212,15 +214,15 @@
 2913:01D6  32 C0                                xor     al,al
 2913:01D8  A2 4F95                              mov     ds:kbdin_key_e,al       ; (2913:4F95=0)
 2913:01DB  A2 5043                              mov     ds:coll_flags1_e,al     ; (2913:5043=0)
-2913:01DE  A2 5219                              mov     ds:var_193e,al          ; (2913:5219=0)
-2913:01E1  A2 51F9                              mov     ds:maybe_fire_e,al      ; (2913:51F9=0)
+2913:01DE  A2 5219                              mov     ds:fire_req_e,al        ; (2913:5219=0)
+2913:01E1  A2 51F9                              mov     ds:ship_fire_e,al       ; (2913:51F9=0)
 2913:01E4  A2 4F99                              mov     ds:fuel_disp_e,al       ; (2913:4F99=0)
 2913:01E7  07                                   pop     es
-2913:01E8  E8 0AE7                              call    proc_15                 ; (0CD2)
-2913:01EB  E8 0999                              call    proc_14                 ; (0B87)
+2913:01E8  E8 0AE7                              call    init_ship_pos           ; (0CD2)
+2913:01EB  E8 0999                              call    draw_radar              ; (0B87)
 2913:01EE                       loc_10:                                         ;  xref 2913:029D
 2913:01EE ,B9 0006                              mov     cx,6
-2913:01F1 .BB 521A                              mov     bx,var_194e             ; (2913:521A=0)
+2913:01F1 .BB 521A                              mov     bx,base_194e            ; (2913:521A=0)
 
 2913:01F4                       locloop_11:                                     ;  xref 2913:01FA
 2913:01F4  80 3F FF                             cmp     byte ptr [bx],0FFh
@@ -255,7 +257,7 @@
 2913:023B  B8 1003                              mov     ax,1003h
 2913:023E  EF                                   out     dx,ax                   ; port 3CEh, EGA graphic index
                                                                                 ;  al = 3, data rotate
-2913:023F  E8 1A32                              call    proc_25                 ; (1C74)
+2913:023F  E8 1A32                              call    do_explosions           ; (1C74)
 2913:0242  E8 1D7A                              call    proc_31                 ; (1FBF)
 2913:0245  E8 2285                              call    draw_enemies            ; (24CD)
 2913:0248  80 3E 5043 00                        cmp     byte ptr ds:coll_flags1_e,0 ; (2913:5043=0)
@@ -289,9 +291,9 @@
 2913:028D  90                                   nop
 2913:028E                       loc_19:                                         ;  xref 2913:026F, 0281, 0286, 0295
 2913:028E  A0 2F67                              mov     al,time_tick            ; (2913:2F67=0)
-2913:0291  38 06 4F8C                           cmp     ds:var_184e,al          ; (2913:4F8C=0)
+2913:0291  38 06 4F8C                           cmp     ds:last_tick,al         ; (2913:4F8C=0)
 2913:0295  74 F7                                je      loc_19
-2913:0297  A2 4F8C                              mov     ds:var_184e,al          ; (2913:4F8C=0)
+2913:0297  A2 4F8C                              mov     ds:last_tick,al         ; (2913:4F8C=0)
 2913:029A  E8 0269                              call    flip_vp                 ; (0506)
 2913:029D  E9 FF4E                              jmp     loc_10                  ; (01EE)
 
@@ -1024,12 +1026,12 @@
 2913:065C  B0 3D                                mov     al,3Dh                  ; '='
 2913:065E  EB 19                                jmp     short loc_55            ; (0679)
 2913:0660                       loc_53:                                         ;  xref 2913:0654
-2913:0660  FE 0E 0970                           dec     var_89                  ; (2913:0970=1)
+2913:0660  FE 0E 0970                           dec     reckey_delay            ; (2913:0970=1)
 2913:0664  75 13                                jnz     loc_55
-2913:0666  8B 36 0971                           mov     si,var_90               ; (2913:0971=974h)
+2913:0666  8B 36 0971                           mov     si,word ptr reckey_offset ; (2913:0971=974h)
 2913:066A  AD                                   lodsw
-2913:066B  88 26 0970                           mov     var_89,ah               ; (2913:0970=1)
-2913:066F  89 36 0971                           mov     var_90,si               ; (2913:0971=974h)
+2913:066B  88 26 0970                           mov     reckey_delay,ah         ; (2913:0970=1)
+2913:066F  89 36 0971                           mov     word ptr reckey_offset,si ; (2913:0971=974h)
 2913:0673  EB 04                                jmp     short loc_55            ; (0679)
 2913:0675                       loc_54:                                         ;  xref 2913:064E
 2913:0675  86 06 4F95                           xchg    ds:kbdin_key_e,al       ; (2913:4F95=0)
@@ -1419,39 +1421,42 @@
                                 ;==========================================================================
 
 2913:0964                       sub_on_fire     proc    near
-2913:0964  80 3E 5219 00                        cmp     byte ptr ds:var_193e,0  ; (2913:5219=0)
+2913:0964  80 3E 5219 00                        cmp     byte ptr ds:fire_req_e,0 ; (2913:5219=0)
 2913:0969  75 04                                jne     loc_ret_70
-2913:096B  FE 06 5219                           inc     byte ptr ds:var_193e    ; (2913:5219=0)
+2913:096B  FE 06 5219                           inc     byte ptr ds:fire_req_e  ; (2913:5219=0)
 
 2913:096F                       loc_ret_70:                                     ;  xref 2913:0969
 2913:096F  C3                                   retn
                                 sub_on_fire     endp
 
-2913:0970  01                   var_89          db      1                       ;  xref 2913:0660, 066B
-2913:0971  0974                 var_90          dw      974h                    ;  xref 2913:0666, 066F
+2913:0970  01                   reckey_delay    db      1                       ; Delay until next recorded key
+                                                                                ;  xref 2913:0660, 066B
+2913:0971  0974                 reckey_offset   dw      offset reckeys          ; Offset of next recorded key
+                                                                                ;  xref 2913:0666, 066F
 2913:0973  00                   lastkey_tick    db      0                       ; Perhaps the tick when we last
                                                                                 ;  consumed a key
                                                                                 ;  xref 2913:0185, 064A, 0659, 11F1
-2913:0974  06 03 04 07 11 01                    db       06h, 03h, 04h, 07h, 11h, 01h
-2913:097A  1E 01 11 01 11 11                    db       1Eh, 01h, 11h, 01h, 11h, 11h
-2913:0980  20 0E 1E 25 1E 0C                    db       20h, 0Eh, 1Eh, 25h, 1Eh, 0Ch
-2913:0986  20 0E 20 17 1E 01                    db       20h, 0Eh, 20h, 17h, 1Eh, 01h
-2913:098C  1E 0B 20 0D 21 23                    db       1Eh, 0Bh, 20h, 0Dh, 21h, 23h
-2913:0992  1E 0D 1F 01 03 01                    db       1Eh, 0Dh, 1Fh, 01h, 03h, 01h
-2913:0998  21 0D 21 06 21 01                    db       21h, 0Dh, 21h, 06h, 21h, 01h
-2913:099E  20 01 02 01 2D 01                    db       20h, 01h, 02h, 01h, 2Dh, 01h
-2913:09A4  21 03 1F 05 21 07                    db       21h, 03h, 1Fh, 05h, 21h, 07h
-2913:09AA  21 0B 21 0A 21 01                    db       21h, 0Bh, 21h, 0Ah, 21h, 01h
-2913:09B0  20 01 20 01 2D 07                    db       20h, 01h, 20h, 01h, 2Dh, 07h
-2913:09B6  21 03 1E 16 21 03                    db       21h, 03h, 1Eh, 16h, 21h, 03h
-2913:09BC  11 01 11 1F 02 01                    db       11h, 01h, 11h, 1Fh, 02h, 01h
-2913:09C2  21 02 1F 01 02 01                    db       21h, 02h, 1Fh, 01h, 02h, 01h
-2913:09C8  02 01 02 01 02 06                    db       02h, 01h, 02h, 01h, 02h, 06h
-2913:09CE  21 01 03 01 03 01                    db       21h, 01h, 03h, 01h, 03h, 01h
-2913:09D4  03 01 03 01 21 06                    db       03h, 01h, 03h, 01h, 21h, 06h
-2913:09DA  21 05 21 05 1E 03                    db       21h, 05h, 21h, 05h, 1Eh, 03h
-2913:09E0  02 03 11 01 21 46                    db       02h, 03h, 11h, 01h, 21h, 46h
-2913:09E6  01                                   db       01h
+2913:0974  0306 0704 0111       reckeys         dw      306h, 704h, 111h        ; Recorded keys
+                                                                                ;  xref 2913:0971
+2913:097A  011E 0111 1111                       dw      11Eh, 111h, 1111h
+2913:0980  0E20 251E 0C1E                       dw      0E20h, 251Eh, 0C1Eh
+2913:0986  0E20 1720 011E                       dw      0E20h, 1720h, 11Eh
+2913:098C  0B1E 0D20 2321                       dw      0B1Eh, 0D20h, 2321h
+2913:0992  0D1E 011F 0103                       dw      0D1Eh, 11Fh, 103h
+2913:0998  0D21 0621 0121                       dw      0D21h, 621h, 121h
+2913:099E  0120 0102 012D                       dw      120h, 102h, 12Dh
+2913:09A4  0321 051F 0721                       dw      321h, 51Fh, 721h
+2913:09AA  0B21 0A21 0121                       dw      0B21h, 0A21h, 121h
+2913:09B0  0120 0120 072D                       dw      120h, 120h, 72Dh
+2913:09B6  0321 161E 0321                       dw      321h, 161Eh, 321h
+2913:09BC  0111 1F11 0102                       dw      111h, 1F11h, 102h
+2913:09C2  0221 011F 0102                       dw      221h, 11Fh, 102h
+2913:09C8  0102 0102 0602                       dw      102h, 102h, 602h
+2913:09CE  0121 0103 0103                       dw      121h, 103h, 103h
+2913:09D4  0103 0103 0621                       dw      103h, 103h, 621h
+2913:09DA  0521 0521 031E                       dw      521h, 521h, 31Eh
+2913:09E0  0302 0111 4621                       dw      302h, 111h, 4621h
+2913:09E6  01                                   db      1
 
                                 ;==========================================================================
                                 ;                          proc_12
@@ -1504,10 +1509,10 @@
 2913:0A56                       loc_74:                                         ;  xref 2913:0A3E, 0A4A
 2913:0A56  84 E4                                test    ah,ah
 2913:0A58  74 0E                                jz      loc_75
-2913:0A5A  E8 006F                              call    proc_13                 ; (0ACC)
-2913:0A5D  E8 0127                              call    proc_14                 ; (0B87)
+2913:0A5A  E8 006F                              call    draw_map                ; (0ACC)
+2913:0A5D  E8 0127                              call    draw_radar              ; (0B87)
 2913:0A60  53                                   push    bx
-2913:0A61  E8 0068                              call    proc_13                 ; (0ACC)
+2913:0A61  E8 0068                              call    draw_map                ; (0ACC)
 2913:0A64  5A                                   pop     dx
 2913:0A65  E8 1843                              call    proc_37                 ; (22AB)
 2913:0A68                       loc_75:                                         ;  xref 2913:09FB, 0A58
@@ -1535,12 +1540,12 @@
 2913:0AC6  05FB 00FB FBFB                       dw      5FBh, 0FBh, 0FBFBh
 
                                 ;==========================================================================
-                                ;                          proc_13
+                                ;         Draw the small map in the right bottom
                                 ;
                                 ;         Called from:   2913:0A5A, 0A61, 0D18
                                 ;==========================================================================
 
-2913:0ACC                       proc_13         proc    near
+2913:0ACC                       draw_map        proc    near
 2913:0ACC  53                                   push    bx
 2913:0ACD  B4 0B                                mov     ah,0Bh
 2913:0ACF  E8 F7EF                              call    ega_map_mask            ; (02C1)
@@ -1581,7 +1586,7 @@
 2913:0B11  1F                                   pop     ds
 2913:0B12  5B                                   pop     bx
 2913:0B13  C3                                   retn
-                                proc_13         endp
+                                draw_map        endp
 
 
                                 ;==========================================================================
@@ -1651,17 +1656,16 @@
 2913:0B7E  C3                                   retn
                                 update_fuel     endp
 
-2913:0B7F  CD                   var_92          db      0CDh                    ;  xref 2913:0BC8
-2913:0B80  0E CF 0E 27 11 25                    db       0Eh,0CFh, 0Eh, 27h, 11h, 25h
-2913:0B86  11                                   db       11h
+2913:0B7F  0ECD 0ECF 1127       var_92          dw      0ECDh, 0ECFh, 1127h     ;  xref 2913:0BC8
+2913:0B85  1125                                 dw      1125h
 
                                 ;==========================================================================
-                                ;                          proc_14
+                                ;         Draw the radar showing relative position of bases
                                 ;
                                 ;         Called from:   2913:01EB, 0A5D, 1E84
                                 ;==========================================================================
 
-2913:0B87                       proc_14         proc    near
+2913:0B87                       draw_radar      proc    near
 2913:0B87  06                                   push    es
 2913:0B88  B8 A000                              mov     ax,0A000h
 2913:0B8B  8E C0                                mov     es,ax
@@ -1672,10 +1676,10 @@
 2913:0B9A .BE 0005                              mov     si,var_4e               ; (2913:0005=0)
 2913:0B9D  B6 10                                mov     dh,10h
 2913:0B9F                       loc_82:                                         ;  xref 2913:0BC6
-2913:0B9F  38 B4 521A                           cmp     ds:var_194e[si],dh      ; (2913:521A=0)
+2913:0B9F  38 B4 521A                           cmp     ds:base_194e[si],dh     ; (2913:521A=0)
 2913:0BA3  77 20                                ja      loc_87
 2913:0BA5  B0 0F                                mov     al,0Fh
-2913:0BA7  38 9C 5220                           cmp     ds:var_195e[si],bl      ; (2913:5220=0)
+2913:0BA7  38 9C 5220                           cmp     ds:base_cellx_e[si],bl  ; (2913:5220=0)
 2913:0BAB  73 04                                jae     loc_83
 2913:0BAD  24 09                                and     al,9
 2913:0BAF  EB 04                                jmp     short loc_84            ; (0BB5)
@@ -1683,7 +1687,7 @@
 2913:0BB1  76 02                                jbe     loc_84
 2913:0BB3  24 06                                and     al,6
 2913:0BB5                       loc_84:                                         ;  xref 2913:0BAF, 0BB1
-2913:0BB5  38 BC 5226                           cmp     ds:var_196e[si],bh      ; (2913:5226=0)
+2913:0BB5  38 BC 5226                           cmp     ds:base_celly_e[si],bh  ; (2913:5226=0)
 2913:0BB9  73 04                                jae     loc_85
 2913:0BBB  24 03                                and     al,3
 2913:0BBD  EB 04                                jmp     short loc_86            ; (0BC3)
@@ -1721,7 +1725,7 @@
 2913:0BF3                       loc_91:                                         ;  xref 2913:0BCD
 2913:0BF3  07                                   pop     es
 2913:0BF4  C3                                   retn
-                                proc_14         endp
+                                draw_radar      endp
 
 
                                 ;==========================================================================
@@ -1812,12 +1816,12 @@
 2913:0CCF  C0 00 80                             db      0C0h, 00h, 80h
 
                                 ;==========================================================================
-                                ;                          proc_15
+                                ;         Init ship position, state, and draw map
                                 ;
                                 ;         Called from:   2913:01E8
                                 ;==========================================================================
 
-2913:0CD2                       proc_15         proc    near
+2913:0CD2                       init_ship_pos   proc    near
 2913:0CD2  E8 2243                              call    maze_rnd_xy             ; (2F18)
 2913:0CD5  88 16 4F9B                           mov     ds:ship_cellx,dl        ; (2913:4F9B=0)
 2913:0CD9  88 36 4FC5                           mov     ds:ship_celly,dh        ; (2913:4FC5=0)
@@ -1843,10 +1847,10 @@
 2913:0D0F  A2 5097                              mov     ds:ship_kind_e,al       ; (2913:5097=0)
 2913:0D12  A2 50B7                              mov     ds:vel_magn_e,al        ; (2913:50B7=0)
 2913:0D15  E8 FEDD                              call    draw_comp_arr           ; (0BF5)
-2913:0D18  E8 FDB1                              call    proc_13                 ; (0ACC)
+2913:0D18  E8 FDB1                              call    draw_map                ; (0ACC)
 2913:0D1B  C7 06 4F97 3FFF                      mov     word ptr ds:fuel_level_e,3FFFh ; (2913:4F97=0)
 2913:0D21  C3                                   retn
-                                proc_15         endp
+                                init_ship_pos   endp
 
 
                                 ;==========================================================================
@@ -1946,7 +1950,8 @@
 2913:0DD2  40 20 10                             db       40h, 20h, 10h
 2913:0DD5  00                   var_113         db      0                       ;  xref 2913:0DAE
 2913:0DD6  00 00 10 08 04 02                    db       00h, 00h, 10h, 08h, 04h, 02h
-2913:0DDC  03                   var_114         db      3                       ;  xref 2913:0E07
+2913:0DDC  03                   bmp_live_2x12   db      3                       ; One "live" (a ship)
+                                                                                ;  xref 2913:0E07
 2913:0DDD  00 03 00 33 30 33                    db       00h, 03h, 00h, 33h, 30h, 33h
 2913:0DE3  30 FF FC FF FC FF                    db       30h,0FFh,0FCh,0FFh,0FCh,0FFh
 2913:0DE9  FC FF FC FF FC FF                    db      0FCh,0FFh,0FCh,0FFh,0FCh,0FFh
@@ -1954,12 +1959,12 @@
 2913:0DF0  30 30 30 30                          db       30h, 30h, 30h, 30h
 
                                 ;==========================================================================
-                                ;                          proc_16
+                                ;         Draw remaining lives represented as ships
                                 ;
                                 ;         Called from:   2913:01C7
                                 ;==========================================================================
 
-2913:0DF4                       proc_16         proc    near
+2913:0DF4                       draw_lives      proc    near
 2913:0DF4  B4 0B                                mov     ah,0Bh
 2913:0DF6  E8 F4C8                              call    ega_map_mask            ; (02C1)
 2913:0DF9 .BF 0905                              mov     di,905h                 ; (2913:0905=50h)
@@ -1968,7 +1973,7 @@
 2913:0E00 ,FE CB                                dec     bl
 2913:0E02  74 18                                jz      loc_ret_97
 2913:0E04  B9 000C                              mov     cx,0Ch
-2913:0E07 .BE 0DDC                              mov     si,offset var_114       ; (2913:0DDC=3)
+2913:0E07 .BE 0DDC                              mov     si,offset bmp_live_2x12 ; (2913:0DDC=3)
 
 2913:0E0A                       locloop_96:                                     ;  xref 2913:0E14
 2913:0E0A  AD                                   lodsw
@@ -1982,7 +1987,7 @@
 
 2913:0E1C                       loc_ret_97:                                     ;  xref 2913:0E02
 2913:0E1C  C3                                   retn
-                                proc_16         endp
+                                draw_lives      endp
 
 2913:0E1D  3C 66 66 66 66 66    bmps_font_1x7   db       3Ch, 66h, 66h, 66h, 66h, 66h ; 39x1x7 "0-9A-Z! c"
                                                                                 ;  xref 2913:1028
@@ -2666,18 +2671,18 @@
 2913:1486                       loc_113:                                        ;  xref 2913:147E
 2913:1486  98                                   cbw
 2913:1487                       loc_114:
-2913:1487  38 A5 51F9                           cmp     ds:maybe_fire_e[di],ah  ; (2913:51F9=0)
+2913:1487  38 A5 51F9                           cmp     ds:ship_fire_e[di],ah   ; (2913:51F9=0)
 2913:148B  74 06                                je      loc_115
-2913:148D  FE 8D 51F9                           dec     byte ptr ds:maybe_fire_e[di] ; (2913:51F9=0)
+2913:148D  FE 8D 51F9                           dec     byte ptr ds:ship_fire_e[di] ; (2913:51F9=0)
 2913:1491  EB 18                                jmp     short loc_116           ; (14AB)
 2913:1493                       loc_115:                                        ;  xref 2913:148B
 2913:1493  85 FF                                test    di,di
 2913:1495  75 17                                jnz     loc_117
 2913:1497  32 C0                                xor     al,al
-2913:1499  38 06 5219                           cmp     ds:var_193e,al          ; (2913:5219=0)
+2913:1499  38 06 5219                           cmp     ds:fire_req_e,al        ; (2913:5219=0)
 2913:149D  74 0C                                je      loc_116
-2913:149F  A2 5219                              mov     ds:var_193e,al          ; (2913:5219=0)
-2913:14A2  C6 06 51F9 02                        mov     byte ptr ds:maybe_fire_e,2 ; (2913:51F9=0)
+2913:149F  A2 5219                              mov     ds:fire_req_e,al        ; (2913:5219=0)
+2913:14A2  C6 06 51F9 02                        mov     byte ptr ds:ship_fire_e,2 ; (2913:51F9=0)
 2913:14A7  90                                   nop
 2913:14A8  E8 0245                              call    shoot_bullet            ; (16F0)
 2913:14AB                       loc_116:                                        ;  xref 2913:147C, 1484, 1491, 149D
@@ -2705,7 +2710,7 @@
 2913:14DC  04 03                                add     al,3
 2913:14DE  98                                   cbw
 2913:14DF  8B F0                                mov     si,ax
-2913:14E1  8A 94 5487                           mov     dl,ds:var_213e[si]      ; (2913:5487=0)
+2913:14E1  8A 94 5487                           mov     dl,ds:buf49[si]         ; (2913:5487=0)
 2913:14E5  84 D2                                test    dl,dl
 2913:14E7  74 3B                                jz      loc_120
 2913:14E9  8A 85 50D7                           mov     al,ds:ship_angle_e[di]  ; (2913:50D7=0)
@@ -2730,7 +2735,7 @@
 2913:1516  22 E6                                and     ah,dh
 2913:1518  22 E2                                and     ah,dl
 2913:151A  74 08                                jz      loc_120
-2913:151C  80 85 51F9 02                        add     byte ptr ds:maybe_fire_e[di],2 ; (2913:51F9=0)
+2913:151C  80 85 51F9 02                        add     byte ptr ds:ship_fire_e[di],2 ; (2913:51F9=0)
 2913:1521  E8 01CC                              call    shoot_bullet            ; (16F0)
 2913:1524                       loc_120:                                        ;  xref 2913:14AB, 14BE, 14E7, 14F5
                                                                                 ;            151A
@@ -3351,7 +3356,7 @@
 2913:1904  98                                   cbw
 2913:1905  53                                   push    bx
 2913:1906  8B D8                                mov     bx,ax
-2913:1908  88 A7 521A                           mov     ds:var_194e[bx],ah      ; (2913:521A=0)
+2913:1908  88 A7 521A                           mov     ds:base_194e[bx],ah     ; (2913:521A=0)
 2913:190C  5B                                   pop     bx
 2913:190D                       loc_169:                                        ;  xref 2913:1900
 2913:190D  C6 85 506D 0A                        mov     byte ptr ds:var_188e[di],0Ah ; (2913:506D=0)
@@ -3415,7 +3420,7 @@
 2913:1979  8A E8                                mov     ch,al
 2913:197B  8A C2                                mov     al,dl
 2913:197D  8A 46 00                             mov     al,[bp]
-2913:1980  E8 0330                              call    proc_26                 ; (1CB3)
+2913:1980  E8 0330                              call    rnd8                    ; (1CB3)
 2913:1983  98                                   cbw
 2913:1984                       loc_174:                                        ;  xref 2913:198A
 2913:1984 ,D0 ED                                shr     ch,1
@@ -3503,15 +3508,15 @@
 2913:1A48  E8 EADA                              call    vid_offset              ; (0525)
 2913:1A4B  8A E8                                mov     ch,al
 2913:1A4D  8A 46 00                             mov     al,[bp]
-2913:1A50  E8 0260                              call    proc_26                 ; (1CB3)
+2913:1A50  E8 0260                              call    rnd8                    ; (1CB3)
 2913:1A53  8A D0                                mov     dl,al
 2913:1A55  45                                   inc     bp
 2913:1A56  8A 46 00                             mov     al,[bp]
-2913:1A59  E8 0257                              call    proc_26                 ; (1CB3)
+2913:1A59  E8 0257                              call    rnd8                    ; (1CB3)
 2913:1A5C  8A E0                                mov     ah,al
 2913:1A5E  45                                   inc     bp
 2913:1A5F  8A 46 00                             mov     al,[bp]
-2913:1A62  E8 024E                              call    proc_26                 ; (1CB3)
+2913:1A62  E8 024E                              call    rnd8                    ; (1CB3)
 2913:1A65  45                                   inc     bp
 2913:1A66  32 F6                                xor     dh,dh
 2913:1A68                       loc_182:                                        ;  xref 2913:1A70
@@ -3648,12 +3653,12 @@
                                                                                 ; Inter-segment boundary
 
                                 ;==========================================================================
-                                ;                          proc_25
+                                ;                          do_explosions
                                 ;
                                 ;         Called from:   2913:023F
                                 ;==========================================================================
 
-2913:1C74                       proc_25         proc    near
+2913:1C74                       do_explosions   proc    near
 2913:1C74  B4 0E                                mov     ah,0Eh
 2913:1C76  E8 E648                              call    ega_map_mask            ; (02C1)
 2913:1C79 .BE 0029                              mov     si,var_10e              ; (2913:0029=0)
@@ -3683,20 +3688,16 @@
 2913:1CAD  79 CD                                jns     loc_190
 2913:1CAF  E8 FC71                              call    explode_bullets         ; (1923)
 2913:1CB2  C3                                   retn
-                                proc_25         endp
+                                do_explosions   endp
 
 
                                 ;==========================================================================
-                                ;                               proc_26
-                                ;     Input: AL
-                                ;     Output: AL
-                                ;     Preserve: AH, BX, DX
-                                ;     Obtain a random value from var_142[64], mask it with AL and return it.
+                                ;         Generate an 8-bit random value and mask it
                                 ;
                                 ;         Called from:   2913:1980, 1A50, 1A59, 1A62
                                 ;==========================================================================
 
-2913:1CB3                       proc_26         proc    near
+2913:1CB3                       rnd8            proc    near
 2913:1CB3  53                                   push    bx
 2913:1CB4  52                                   push    dx
 2913:1CB5  8B D0                                mov     dx,ax
@@ -3709,7 +3710,7 @@
 2913:1CC4  5A                                   pop     dx
 2913:1CC5  5B                                   pop     bx
 2913:1CC6  C3                                   retn
-                                proc_26         endp
+                                rnd8            endp
 
 
                                 ;==========================================================================
@@ -3829,7 +3830,7 @@
 2913:1D5D  E8 11B8                              call    maze_rnd_xy             ; (2F18)
 2913:1D60  98                                   cbw
 2913:1D61  8B D8                                mov     bx,ax
-2913:1D63  80 BF 1DE5 03                        cmp     byte ptr var_152[bx],3  ; (2913:1DE5=0)
+2913:1D63  80 BF 1DE5 03                        cmp     byte ptr num_walls[bx],3 ; (2913:1DE5=0)
 2913:1D68  74 4C                                je      loc_210
 2913:1D6A  8A 87 1DF4                           mov     al,var_153[bx]          ; (2913:1DF4=7)
 2913:1D6E  88 04                                mov     [si],al
@@ -3869,15 +3870,15 @@
 2913:1DB4  74 A7                                je      loc_206
 2913:1DB6                       loc_210:                                        ;  xref 2913:1D68, 1DA9
 2913:1DB6  8A 04                                mov     al,[si]
-2913:1DB8  88 86 522C                           mov     ss:var_197e[bp],al      ; (2913:522C=0)
+2913:1DB8  88 86 522C                           mov     ss:base_cellfl_e[bp],al ; (2913:522C=0)
 2913:1DBC  0C 80                                or      al,80h
 2913:1DBE  88 04                                mov     [si],al
-2913:1DC0  88 96 5220                           mov     ss:var_195e[bp],dl      ; (2913:5220=0)
-2913:1DC4  88 B6 5226                           mov     ss:var_196e[bp],dh      ; (2913:5226=0)
+2913:1DC0  88 96 5220                           mov     ss:base_cellx_e[bp],dl  ; (2913:5220=0)
+2913:1DC4  88 B6 5226                           mov     ss:base_celly_e[bp],dh  ; (2913:5226=0)
 2913:1DC8  32 C0                                xor     al,al
-2913:1DCA  88 86 521A                           mov     ss:var_194e[bp],al      ; (2913:521A=0)
-2913:1DCE  88 86 5238                           mov     [bp+5238h],al
-2913:1DD2  C6 86 5232 1C                        mov     byte ptr [bp+5232h],1Ch
+2913:1DCA  88 86 521A                           mov     ss:base_194e[bp],al     ; (2913:521A=0)
+2913:1DCE  88 86 5238                           mov     ss:arr_2e[bp],al        ; (2913:5238=0)
+2913:1DD2  C6 86 5232 1C                        mov     byte ptr ss:arr_1e[bp],1Ch ; (2913:5232=0)
 2913:1DD7  90                                   nop
 2913:1DD8  4D                                   dec     bp
 2913:1DD9  79 82                                jns     loc_206
@@ -3888,7 +3889,7 @@
 2913:1DE4  C3                                   retn
                                 proc_27         endp
 
-2913:1DE5  00                   var_152         db      0                       ; Data table (indexed access)
+2913:1DE5  00                   num_walls       db      0                       ; Data table (indexed access)
                                                                                 ;  xref 2913:1D63
 2913:1DE6  01 01 02 01 02 02                    db      1, 1, 2, 1, 2, 2
 2913:1DEC  03 01 02 02 03 02                    db      3, 1, 2, 2, 3, 2
@@ -3908,12 +3909,12 @@
 2913:1E03                       proc_28         proc    near
 2913:1E03  B4 0B                                mov     ah,0Bh
 2913:1E05  E8 E4B9                              call    ega_map_mask            ; (02C1)
-2913:1E08  8A 9E 5220                           mov     bl,ss:var_195e[bp]      ; (2913:5220=0)
-2913:1E0C  8A BE 5226                           mov     bh,ss:var_196e[bp]      ; (2913:5226=0)
+2913:1E08  8A 9E 5220                           mov     bl,ss:base_cellx_e[bp]  ; (2913:5220=0)
+2913:1E0C  8A BE 5226                           mov     bh,ss:base_celly_e[bp]  ; (2913:5226=0)
 2913:1E10  BA 1414                              mov     dx,1414h
 2913:1E13  E8 F95A                              call    rel_coords              ; (1770)
 2913:1E16  72 35                                jc      loc_213
-2913:1E18  8A 86 521A                           mov     al,ss:var_194e[bp]      ; (2913:521A=0)
+2913:1E18  8A 86 521A                           mov     al,ss:base_194e[bp]     ; (2913:521A=0)
 2913:1E1C  A8 81                                test    al,81h
 2913:1E1E  75 6C                                jnz     loc_217
 2913:1E20  B9 0004                              mov     cx,4
@@ -3968,11 +3969,11 @@
 
 2913:1E75  84 F6                                test    dh,dh
 2913:1E77  74 13                                jz      loc_217
-2913:1E79  C6 86 521A E6                        mov     byte ptr ss:var_194e[bp],0E6h ; (2913:521A=0)
+2913:1E79  C6 86 521A E6                        mov     byte ptr ss:base_194e[bp],0E6h ; (2913:521A=0)
 2913:1E7E  90                                   nop
 2913:1E7F  B2 04                                mov     dl,4
 2913:1E81  E8 FE43                              call    inc_fuel                ; (1CC7)
-2913:1E84  E8 ED00                              call    proc_14                 ; (0B87)
+2913:1E84  E8 ED00                              call    draw_radar              ; (0B87)
 2913:1E87  8B D3                                mov     dx,bx
 2913:1E89  E8 041F                              call    proc_37                 ; (22AB)
 2913:1E8C                       loc_217:                                        ;  xref 2913:1E1E, 1E28, 1E30, 1E77
@@ -3985,8 +3986,8 @@
 2913:1E99  D1 E6                                shl     si,1
 2913:1E9B  D1 E6                                shl     si,1
 2913:1E9D  2B F0                                sub     si,ax
-2913:1E9F  8A 9E 5220                           mov     bl,ss:var_195e[bp]      ; (2913:5220=0)
-2913:1EA3  8A BE 5226                           mov     bh,ss:var_196e[bp]      ; (2913:5226=0)
+2913:1E9F  8A 9E 5220                           mov     bl,ss:base_cellx_e[bp]  ; (2913:5220=0)
+2913:1EA3  8A BE 5226                           mov     bh,ss:base_celly_e[bp]  ; (2913:5226=0)
 2913:1EA7  BA 0808                              mov     dx,808h
 2913:1EAA  55                                   push    bp
 2913:1EAB  33 ED                                xor     bp,bp
@@ -4180,49 +4181,49 @@
 2913:1FCB .BD 0005                              mov     bp,var_4e               ; (2913:0005=0)
 2913:1FCE                       loc_237:                                        ;  xref 2913:203E
 2913:1FCE  32 C0                                xor     al,al
-2913:1FD0  38 86 521A                           cmp     ss:var_194e[bp],al      ; (2913:521A=0)
+2913:1FD0  38 86 521A                           cmp     ss:base_194e[bp],al     ; (2913:521A=0)
 2913:1FD4  74 04                                je      loc_238
 2913:1FD6  78 54                                js      loc_243
 2913:1FD8  EB 10                                jmp     short loc_239           ; (1FEA)
 2913:1FDA                       loc_238:                                        ;  xref 2913:1FD4
-2913:1FDA  8A 86 5232                           mov     al,[bp+5232h]
+2913:1FDA  8A 86 5232                           mov     al,ss:arr_1e[bp]        ; (2913:5232=0)
 2913:1FDE  E8 0EF0                              call    rnd_update              ; (2ED1)
 2913:1FE1  75 07                                jnz     loc_239
-2913:1FE3  FE 86 521A                           inc     byte ptr ss:var_194e[bp] ; (2913:521A=0)
+2913:1FE3  FE 86 521A                           inc     byte ptr ss:base_194e[bp] ; (2913:521A=0)
 2913:1FE7  E8 038F                              call    proc_41                 ; (2379)
 2913:1FEA                       loc_239:                                        ;  xref 2913:1FD8, 1FE1
 2913:1FEA  E8 009C                              call    proc_33                 ; (2089)
-2913:1FED  FE 86 5238                           inc     byte ptr [bp+5238h]
-2913:1FF1  8A 86 5238                           mov     al,[bp+5238h]
+2913:1FED  FE 86 5238                           inc     byte ptr ss:arr_2e[bp]  ; (2913:5238=0)
+2913:1FF1  8A 86 5238                           mov     al,ss:arr_2e[bp]        ; (2913:5238=0)
 2913:1FF5  3C 40                                cmp     al,40h                  ; '@'
 2913:1FF7  75 18                                jne     loc_241
-2913:1FF9  FE 8E 5238                           dec     byte ptr [bp+5238h]
+2913:1FF9  FE 8E 5238                           dec     byte ptr ss:arr_2e[bp]  ; (2913:5238=0)
 2913:1FFD  B4 1C                                mov     ah,1Ch
-2913:1FFF  8A 86 5232                           mov     al,[bp+5232h]
+2913:1FFF  8A 86 5232                           mov     al,ss:arr_1e[bp]        ; (2913:5232=0)
 2913:2003  D0 E0                                shl     al,1
 2913:2005  72 06                                jc      loc_240
 2913:2007  3A E0                                cmp     ah,al
 2913:2009  72 02                                jb      loc_240
 2913:200B  8A E0                                mov     ah,al
 2913:200D                       loc_240:                                        ;  xref 2913:2005, 2009
-2913:200D  88 A6 5232                           mov     [bp+5232h],ah
+2913:200D  88 A6 5232                           mov     ss:arr_1e[bp],ah        ; (2913:5232=0)
 2913:2011                       loc_241:                                        ;  xref 2913:1FF7
 2913:2011  E8 FDEF                              call    proc_28                 ; (1E03)
 2913:2014  84 E4                                test    ah,ah
 2913:2016  74 25                                jz      loc_244
 2913:2018  B4 01                                mov     ah,1
-2913:201A  8A 86 5232                           mov     al,[bp+5232h]
+2913:201A  8A 86 5232                           mov     al,ss:arr_1e[bp]        ; (2913:5232=0)
 2913:201E  D0 E8                                shr     al,1
 2913:2020  3A E0                                cmp     ah,al
 2913:2022  73 02                                jae     loc_242
 2913:2024  8A E0                                mov     ah,al
 2913:2026                       loc_242:                                        ;  xref 2913:2022
-2913:2026  88 A6 5232                           mov     [bp+5232h],ah
+2913:2026  88 A6 5232                           mov     ss:arr_1e[bp],ah        ; (2913:5232=0)
 2913:202A  EB 11                                jmp     short loc_244           ; (203D)
 2913:202C                       loc_243:                                        ;  xref 2913:1FD6
-2913:202C  80 BE 521A FF                        cmp     byte ptr ss:var_194e[bp],0FFh ; (2913:521A=0)
+2913:202C  80 BE 521A FF                        cmp     byte ptr ss:base_194e[bp],0FFh ; (2913:521A=0)
 2913:2031  74 0A                                je      loc_244
-2913:2033  FE 86 521A                           inc     byte ptr ss:var_194e[bp] ; (2913:521A=0)
+2913:2033  FE 86 521A                           inc     byte ptr ss:base_194e[bp] ; (2913:521A=0)
 2913:2037  E8 FDC9                              call    proc_28                 ; (1E03)
 2913:203A  E8 0004                              call    proc_32                 ; (2041)
 2913:203D                       loc_244:                                        ;  xref 2913:2016, 202A, 2031
@@ -4251,9 +4252,9 @@
 2913:2054  83 C7 20                             add     di,20h
 2913:2057  40                                   inc     ax
 2913:2058  88 85 5043                           mov     ds:coll_flags1_e[di],al ; (2913:5043=0)
-2913:205C  8A 86 5220                           mov     al,ss:var_195e[bp]      ; (2913:5220=0)
+2913:205C  8A 86 5220                           mov     al,ss:base_cellx_e[bp]  ; (2913:5220=0)
 2913:2060  88 85 4F9B                           mov     ds:ship_cellx[di],al    ; (2913:4F9B=0)
-2913:2064  8A 86 5226                           mov     al,ss:var_196e[bp]      ; (2913:5226=0)
+2913:2064  8A 86 5226                           mov     al,ss:base_celly_e[bp]  ; (2913:5226=0)
 2913:2068  88 85 4FC5                           mov     ds:ship_celly[di],al    ; (2913:4FC5=0)
 2913:206C  C6 85 506D 0A                        mov     byte ptr ds:var_188e[di],0Ah ; (2913:506D=0)
 2913:2071  90                                   nop
@@ -4406,9 +4407,9 @@
 2913:2158                       proc_34         proc    near
 2913:2158  80 EA 04                             sub     dl,4
 2913:215B  80 EE 04                             sub     dh,4
-2913:215E  BF 54B8                              mov     di,54B8h
-2913:2161  BB 2185                              mov     bx,2185h
-2913:2164  BD 5436                              mov     bp,5436h
+2913:215E .BF 54B8                              mov     di,var_214e             ; (2913:54B8=0)
+2913:2161 .BB 2185                              mov     bx,offset box9x9flags   ; (2913:2185=3)
+2913:2164 .BD 5436                              mov     bp,var_207e             ; (2913:5436=0)
 2913:2167  E8 0DD2                              call    maze_readxy             ; (2F3C)
 2913:216A  B1 09                                mov     cl,9
 
@@ -4432,18 +4433,19 @@
 2913:2184  C3                                   retn
                                 proc_34         endp
 
-2913:2185  03 02 02 02 02 02                    db      3, 2, 2, 2, 2, 2
-2913:218B  02 02 06 01 00 00                    db      2, 2, 6, 1, 0, 0
-2913:2191  00 00 00 00 00 04                    db      0, 0, 0, 0, 0, 4
-2913:2197  01 00 00 00 00 00                    db      1, 0, 0, 0, 0, 0
-2913:219D  00 00 04 01 00 00                    db      0, 0, 4, 1, 0, 0
-2913:21A3  00 00 00 00 00 04                    db      0, 0, 0, 0, 0, 4
-2913:21A9  01 00 00 00 00 00                    db      1, 0, 0, 0, 0, 0
-2913:21AF  00 00 04 01 00 00                    db      0, 0, 4, 1, 0, 0
-2913:21B5  00 00 00 00 00 04                    db      0, 0, 0, 0, 0, 4
-2913:21BB  01 00 00 00 00 00                    db      1, 0, 0, 0, 0, 0
-2913:21C1  00 00 04 01 00 00                    db      0, 0, 4, 1, 0, 0
-2913:21C7  00 00 00 00 00 04                    db      0, 0, 0, 0, 0, 4
+2913:2185  03                   box9x9flags     db      3                       ;  xref 2913:2161
+2913:2186  0007[02]                             db      7 dup (2)
+2913:218D  06 01 00 00 00 00                    db      6, 1, 0, 0, 0, 0
+2913:2193  00 00 00 04 01 00                    db      0, 0, 0, 4, 1, 0
+2913:2199  00 00 00 00 00 00                    db      0, 0, 0, 0, 0, 0
+2913:219F  04 01 00 00 00 00                    db      4, 1, 0, 0, 0, 0
+2913:21A5  00 00 00 04 01 00                    db      0, 0, 0, 4, 1, 0
+2913:21AB  00 00 00 00 00 00                    db      0, 0, 0, 0, 0, 0
+2913:21B1  04 01 00 00 00 00                    db      4, 1, 0, 0, 0, 0
+2913:21B7  00 00 00 04 01 00                    db      0, 0, 0, 4, 1, 0
+2913:21BD  00 00 00 00 00 00                    db      0, 0, 0, 0, 0, 0
+2913:21C3  04 01 00 00 00 00                    db      4, 1, 0, 0, 0, 0
+2913:21C9  00 00 00 04                          db      0, 0, 0, 4
 2913:21CD  09 08 08 08 08 08                    db      9, 8, 8, 8, 8, 8, 8, 8, 0Ch
 2913:21D3  08 08 0C
 
@@ -4609,7 +4611,7 @@
 2913:22EC  84 2C                                test    ch,[si]
 2913:22EE  75 14                                jnz     loc_ret_265
 2913:22F0  02 DA                                add     bl,dl
-2913:22F2  08 87 5487                           or      ds:var_213e[bx],al      ; (2913:5487=0)
+2913:22F2  08 87 5487                           or      ds:buf49[bx],al         ; (2913:5487=0)
 2913:22F6  03 F5                                add     si,bp
 2913:22F8  34 0F                                xor     al,0Fh
 2913:22FA  86 D6                                xchg    dl,dh
@@ -4731,12 +4733,12 @@
 2913:2382                       loc_270:                                        ;  xref 2913:23BC, 23DD, 23E3
 2913:2382 ,4E                                   dec     si
 2913:2383  75 2F                                jnz     loc_273
-2913:2385  8A 85 5220                           mov     al,ds:var_195e[di]      ; (2913:5220=0)
+2913:2385  8A 85 5220                           mov     al,ds:base_cellx_e[di]  ; (2913:5220=0)
 2913:2389  2A 06 4F9B                           sub     al,ds:ship_cellx        ; (2913:4F9B=0)
 2913:238D  04 0A                                add     al,0Ah
 2913:238F  3C 15                                cmp     al,15h
 2913:2391  73 1A                                jae     loc_271
-2913:2393  8A 85 5226                           mov     al,ds:var_196e[di]      ; (2913:5226=0)
+2913:2393  8A 85 5226                           mov     al,ds:base_celly_e[di]  ; (2913:5226=0)
 2913:2397  2A 06 4FC5                           sub     al,ds:ship_celly        ; (2913:4FC5=0)
 2913:239B  04 0A                                add     al,0Ah
 2913:239D  3C 15                                cmp     al,15h
@@ -4747,7 +4749,7 @@
 2913:23A8  E8 FF99                              call    remove_actor            ; (2344)
 2913:23AB  EB 38                                jmp     short loc_277           ; (23E5)
 2913:23AD                       loc_271:                                        ;  xref 2913:2391, 239F, 23A4
-2913:23AD  88 BD 521A                           mov     ds:var_194e[di],bh      ; (2913:521A=0)
+2913:23AD  88 BD 521A                           mov     ds:base_194e[di],bh     ; (2913:521A=0)
 2913:23B1                       loc_272:                                        ;  xref 2913:2455
 2913:23B1 ,8B EF                                mov     bp,di
 2913:23B3  C3                                   retn
@@ -4776,9 +4778,9 @@
 2913:23E1  8B DE                                mov     bx,si
 2913:23E3  EB 9D                                jmp     short loc_270           ; (2382)
 2913:23E5                       loc_277:                                        ;  xref 2913:23AB, 23BA
-2913:23E5  8A 9D 5220                           mov     bl,ds:var_195e[di]      ; (2913:5220=0)
+2913:23E5  8A 9D 5220                           mov     bl,ds:base_cellx_e[di]  ; (2913:5220=0)
 2913:23E9  88 9C 4F9B                           mov     ds:ship_cellx[si],bl    ; (2913:4F9B=0)
-2913:23ED  8A BD 5226                           mov     bh,ds:var_196e[di]      ; (2913:5226=0)
+2913:23ED  8A BD 5226                           mov     bh,ds:base_celly_e[di]  ; (2913:5226=0)
 2913:23F1  88 BC 4FC5                           mov     ds:ship_celly[si],bh    ; (2913:4FC5=0)
 2913:23F5  B0 13                                mov     al,13h
 2913:23F7  88 84 4FEF                           mov     ds:ship_ofsx[si],al     ; (2913:4FEF=0)
@@ -4808,7 +4810,7 @@
 2913:2430  B0 04                                mov     al,4
 2913:2432  E8 0A9C                              call    rnd_update              ; (2ED1)
 2913:2435  8B D8                                mov     bx,ax
-2913:2437  8A 95 522C                           mov     dl,ds:var_197e[di]      ; (2913:522C=0)
+2913:2437  8A 95 522C                           mov     dl,ds:base_cellfl_e[di] ; (2913:522C=0)
 2913:243B  84 97 2458                           test    dl,var_159[bx]          ; (2913:2458=2)
 2913:243F  75 EF                                jnz     loc_280
 2913:2441  D0 E0                                shl     al,1
@@ -4962,7 +4964,7 @@
 2913:2587  24 0F                                and     al,0Fh
 2913:2589  98                                   cbw
 2913:258A  8B F8                                mov     di,ax
-2913:258C  88 A5 521A                           mov     ds:var_194e[di],ah      ; (2913:521A=0)
+2913:258C  88 A5 521A                           mov     ds:base_194e[di],ah     ; (2913:521A=0)
 2913:2590                       loc_290:                                        ;  xref 2913:2585
 2913:2590  B2 01                                mov     dl,1
 2913:2592  88 96 5043                           mov     ss:coll_flags1_e[bp],dl ; (2913:5043=0)
@@ -5065,7 +5067,7 @@
 2913:271A  A2 4F89                              mov     ds:var_182e,al          ; (2913:4F89=0)
 2913:271D  98                                   cbw
 2913:271E  8B F8                                mov     di,ax
-2913:2720  38 A5 521A                           cmp     ds:var_194e[di],ah      ; (2913:521A=0)
+2913:2720  38 A5 521A                           cmp     ds:base_194e[di],ah     ; (2913:521A=0)
 2913:2724  78 30                                js      loc_298
 2913:2726  8A C3                                mov     al,bl
 2913:2728  24 70                                and     al,70h                  ; 'p'
@@ -5073,7 +5075,7 @@
 2913:272C  3C 50                                cmp     al,50h                  ; 'P'
 2913:272E  75 12                                jne     loc_297
 2913:2730  B2 0E                                mov     dl,0Eh
-2913:2732  C6 85 521A 02                        mov     byte ptr ds:var_194e[di],2 ; (2913:521A=0)
+2913:2732  C6 85 521A 02                        mov     byte ptr ds:base_194e[di],2 ; (2913:521A=0)
 2913:2737  90                                   nop
 2913:2738  8B C7                                mov     ax,di
 2913:273A  0C 60                                or      al,60h                  ; '`'
@@ -5083,7 +5085,7 @@
 2913:2742  3C 60                                cmp     al,60h                  ; '`'
 2913:2744  75 10                                jne     loc_298
 2913:2746  B2 05                                mov     dl,5
-2913:2748  88 A5 521A                           mov     ds:var_194e[di],ah      ; (2913:521A=0)
+2913:2748  88 A5 521A                           mov     ds:base_194e[di],ah     ; (2913:521A=0)
 2913:274C  8B C7                                mov     ax,di
 2913:274E  0C 70                                or      al,70h                  ; 'p'
 2913:2750  88 84 5043                           mov     ds:coll_flags1_e[si],al ; (2913:5043=0)
@@ -5259,7 +5261,7 @@
 2913:28AA  A0 4F89                              mov     al,ds:var_182e          ; (2913:4F89=0)
 2913:28AD  98                                   cbw
 2913:28AE  8B F8                                mov     di,ax
-2913:28B0  C6 85 521A 02                        mov     byte ptr ds:var_194e[di],2 ; (2913:521A=0)
+2913:28B0  C6 85 521A 02                        mov     byte ptr ds:base_194e[di],2 ; (2913:521A=0)
 2913:28B5  90                                   nop
 2913:28B6  EB B0                                jmp     short loc_317           ; (2868)
                                 proc_43         endp
@@ -6293,7 +6295,7 @@
                                 ;==========================================================================
                                 ;                                maze_rnd_xy
                                 ;     Output:
-                                ;             DL: x, DH: y, i
+                                ;             DL: x, DH: y
                                 ;             AL: maze_buf[x,y]
                                 ;             SI: address in buffer
                                 ;     Generate random numbers x=[1..61], y=[3..60] until maze_buf[x,y] >= 0.

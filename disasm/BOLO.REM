@@ -221,7 +221,7 @@ end
         The result is masked with AX-1.
 17                                 maze_rnd_xy
         Output: 
-                DL: x, DH: y, i
+                DL: x, DH: y
                 AL: maze_buf[x,y]
                 SI: address in buffer
         Generate random numbers x=[1..61], y=[3..60] until maze_buf[x,y] >= 0.

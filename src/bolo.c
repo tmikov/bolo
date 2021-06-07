@@ -23,6 +23,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define TIMER_PERIOD_US 54925
+
+enum ScanCode {
+  SC_ESC = 1,
+  SC_1 = 2,
+  SC_9 = 0x0A,
+  SC_0 = 0x0B,
+  SC_ENTER = 0x1C,
+  SC_SPACE = 0x39,
+  SC_F1 = 0x3B,
+  SC_F2 = 0x3C,
+  SC_F3 = 0x3D,
+  SC_UP = 0x48,
+  SC_LEFT = 0x4B,
+  SC_RIGHT = 0x4D,
+  SC_DOWN = 0x50,
+};
+
 typedef enum EGAColor {
   EGABlack = 0,
   EGALowBlue = 1,
@@ -64,11 +82,13 @@ typedef int8_t SBOL;
 #define SBOL_0 0
 #define SBOL_A 10
 #define SBOL_Z 35
+#define SBOL_EXCL 36
 #define SBOL_SPACE 37
 #define SBOL_END -1
 
 #define SB(x)                                          \
   ((x) == ' '              ? SBOL_SPACE                \
+       : (x) == '!'        ? SBOL_EXCL                 \
        : (x) <= '9'        ? (x) - '0'                 \
        : ((x) | 32) <= 'z' ? SBOL_A + ((x) | 32) - 'a' \
                            : -1)
@@ -102,6 +122,7 @@ static const StepXY step_xy[6][8] = {
 };
 // clang-format on
 
+static uint8_t lastkey_tick;
 static uint8_t level;
 static uint8_t density;
 /// Score as a SBol string.
@@ -114,7 +135,7 @@ static SBOL strb_hisco[7] =
 static uint8_t high_level;
 /// Density of the high score
 static uint8_t high_dens;
-/// Increments every 54.94 ms
+/// Increments every 54.925 us.
 static uint8_t time_tick;
 /// I believe this is used to keep the random generator state.
 static uint8_t rnd_state[32] = {0x0B, 0xED, 0x5F, 0x8F, 0xB5, 0x3B, 0xE3, 0x73, 0x67, 0x23, 0x6D,
@@ -125,6 +146,16 @@ static uint8_t rnd_state[32] = {0x0B, 0xED, 0x5F, 0x8F, 0xB5, 0x3B, 0xE3, 0x73, 
 /// the current tick with some offset.
 static uint8_t time_5bit;
 #define TIME_5BIT_MASK 0x1F
+
+/// The size in pixels of one cell.
+#define CELL_SIZE 38
+
+#define MAZE_SCREEN_W 208
+#define MAZE_SCREEN_H 191
+
+#define NUM_ACTORS42 42
+#define NUM_ACTORS32 32
+#define NUM_BASES 6
 
 #define MAZE_WIDTH 64
 #define MAZE_HEIGHT 64
@@ -139,6 +170,7 @@ static uint8_t time_5bit;
 #define W_B 8
 #define W_NO 0
 #define W_ALL 0x0F
+#define CELL_FL 0x80
 
 static uint8_t _ext_alist_buf[2 + MAZE_HEIGHT * MAZE_WIDTH];
 /// A 64x64 buffer containing the head of list of actors in each cell. 0 means
@@ -153,16 +185,16 @@ static uint8_t _ext_maze_buf[2 + MAZE_HEIGHT * MAZE_WIDTH];
 
 /// Destination segment for graphics writes.
 static unsigned dest_seg; // 4F8Ah
+/// This allows the game to control the frame rate. One frame per tick.
+static uint8_t last_tick; // 4F8Ch
 
-/// The size in pixels of one cell.
-#define CELL_SIZE 38
+/// Updated by the keyboard handler as soon as a key is pressed.
+static uint8_t kbdin_key; // 4F95h
+static uint8_t lives; // 4F96h
 
-#define MAZE_SCREEN_W 208
-#define MAZE_SCREEN_H 191
-
-#define NUM_ACTORS42 42
-#define NUM_ACTORS32 32
-
+static uint16_t fuel_level_e; // 4F97h
+static uint8_t fuel_disp_e; // 4F99h
+static uint8_t var_186e; // 4F9Ah
 /// The cell of the ship.
 static uint8_t ship_cellx[NUM_ACTORS42];
 /// The cell of the ship.
@@ -202,24 +234,94 @@ static uint8_t bullet_flags[NUM_ACTORS32]; // 51B9h
 /// Angle of the moving bullet.
 static uint8_t bullet_angle[NUM_ACTORS32]; // 51D9h
 
-/// Not completely sure what this is yet, but it is a 32-byte array and element
-/// 0 is incremented by 2 when we press the fire button. Theory: this has to do with
-/// actors (0 being the ship) firing.
-static uint8_t maybe_fire[NUM_ACTORS32]; // 51F9h
+/// Flags for ships firing.
+static uint8_t ship_fire[NUM_ACTORS32]; // 51F9h
+/// The fire key was pressed, requesting shooting a bullet.
+static uint8_t fire_req; // 5219h
+static uint8_t base_194e[NUM_BASES]; // 521Ah
+static uint8_t base_cellx[NUM_BASES]; // 5220h
+static uint8_t base_celly[NUM_BASES]; // 5226h
+static uint8_t base_cellfl[NUM_BASES]; // 522Ch
+static uint8_t arr_1e[6]; // 5232h
+static uint8_t arr_2e[6]; // 5238h
+static uint8_t var_198e[504]; // 523Eh
 
-uint8_t var_194e[6]; // 521Ah
-uint8_t var_195e[6]; // 5220h
-uint8_t var_196e[6]; // 5226h
-uint8_t var_197e[18]; // 522Ch
-static uint16_t var_198e; // 523Eh
+uint8_t var_207e[81]; // *(2913:5436=0)
+// static struct {
+//   uint8_t var_207e[31]; // *(2913:5436=0)
+//   uint8_t var_208e[8];  //+31 *(2913:5455=0)
+//   uint8_t var_209e;     //+39 *(2913:545D=0)
+//   uint8_t var_210e;     //+40 *(2913:545E=0)
+//   uint8_t var_211e[8];  //+41 *(2913:545F=0)
+//   uint8_t var_212e[32]; //+49 *(2913:5467=0)
+// } s1;
 
+static uint8_t buf49[7 * 7]; // *(2913:5487=0)
+
+uint8_t var_214e[81]; // *(2913:54B8=0)
+// static struct {
+//   uint8_t var_214e[40]; // *(2913:54B8=0)
+//   uint8_t var_215e[41]; //+40 *(2913:54E0=0)
+// } s2;
+
+typedef enum AsyncResult {
+  AS_UNWIND,
+  AS_NORMAL,
+} AsyncResult;
+
+static struct {
+  struct {
+    int state;
+    uint8_t wait_until;
+  } start;
+  struct {
+    int state;
+    uint8_t wait_until;
+  } title_screen;
+  struct {
+    int state;
+  } edit_levdens;
+  struct {
+    int state;
+    uint8_t wait_until;
+  } edit_digit;
+  struct {
+    int state;
+  } init_maze;
+  struct {
+    int state;
+  } gen_maze;
+} async_state;
+
+static AsyncResult async_start(void);
+static AsyncResult async_init_maze(void);
+static AsyncResult async_gen_maze(void);
+static void clr_alt_box(unsigned vidSeg);
+static void clear_vp0();
+static AsyncResult async_title_screen(void);
+static void draw_hud(void);
+static void draw_levsel(void);
+static AsyncResult async_edit_levdens(void);
+static AsyncResult
+async_edit_digit(uint8_t *pDigit, unsigned vidOfs, uint8_t maxPlus1, uint8_t curDigit);
 static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsigned hm1);
 static void draw_bolo_8x20(unsigned offset);
+static void draw_maze(unsigned seg);
 static void vert_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
 static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
+static uint8_t getkey(void);
+static void handle_kbd(void);
+static void draw_radar(void);
+static void draw_comp_arr(void);
+static void init_ship_pos(void);
+static void draw_ship(unsigned pageSeg);
+static void draw_lives(void);
 static void draw_mstrs(const SBOLDesc *strings);
 static void draw_str(unsigned offset, const SBOL *str);
 static void draw_char_1x7(unsigned offset, SBOL ch);
+static void proc_17(void);
+static void update_bullets(unsigned seg);
+static void adjust_bullets(void);
 static void shoot_bullet(unsigned actor);
 static inline bool in_screen(uint8_t x, uint8_t y);
 
@@ -251,12 +353,16 @@ static void collide_cell(
     uint8_t objOffsY);
 static uint8_t *maze_xy(int8_t x, int8_t y);
 static void draw_explosion(unsigned vidSeg, int actor);
-static void proc_25(unsigned vidSeg);
-static uint8_t proc_26(uint8_t mask);
+static void do_explosions(unsigned vidSeg);
+static uint8_t rnd8(uint8_t mask);
 static void inc_fuel(uint8_t dl);
+static void update_hisco(void);
+static void proc_27(void);
+static void proc_37(int8_t dl_x, int8_t dh_y);
 static uint8_t *alist_xy(int8_t x, int8_t y);
 static void add_actor(unsigned actor, int8_t cellX, int8_t cellY);
 static void remove_actor(unsigned actor);
+static void draw_enemies(unsigned vidSeg);
 static uint8_t rnd_update(uint8_t limit);
 static uint8_t rndnum(uint8_t limit);
 
@@ -357,6 +463,17 @@ static inline void ega_or(unsigned offset, uint8_t value, uint8_t mask) {
     g_ega_screen[3][offset] |= value;
 }
 
+static inline void ega_xor(unsigned offset, uint8_t value, uint8_t mask) {
+  if (mask & 1)
+    g_ega_screen[0][offset] ^= value;
+  if (mask & 2)
+    g_ega_screen[1][offset] ^= value;
+  if (mask & 4)
+    g_ega_screen[2][offset] ^= value;
+  if (mask & 8)
+    g_ega_screen[3][offset] ^= value;
+}
+
 /// Write to the specified address in EGA memory, obeying the mask
 static inline void ega_write(unsigned offset, uint8_t value, uint8_t mask) {
   if (mask & 1)
@@ -408,11 +525,261 @@ static inline uint8_t *mempset(uint8_t *dst, uint8_t value, unsigned len) {
   return dst + len;
 }
 
+// clang-format off
+static const SBOL str_congrats[] = {
+  SB('C'), SB('O'), SB('N'), SB('G'), SB('R'), SB('A'), SB('T'), SB('U'),
+  SB('L'), SB('A'), SB('T'), SB('I'), SB('O'), SB('N'), SB('S'), SB(' '),
+  SB('!'), SB('!'), SBOL_END
+};
+static const SBOL str_destroyed[] = {
+  SB('Y'), SB('O'), SB('U'), SB(' '), SB('H'), SB('A'), SB('V'), SB('E'),
+  SB(' '), SB('D'), SB('E'), SB('S'), SB('T'), SB('R'), SB('O'), SB('Y'),
+  SB('E'), SB('D'), SBOL_END
+};
+static const SBOL str_alien_pgnd[] = {
+  SB('T'), SB('H'), SB('E'), SB(' '), SB('A'), SB('L'), SB('I'), SB('E'),
+  SB('N'), SB(' '), SB('P'), SB('R'), SB('O'), SB('V'), SB('I'), SB('N'),
+  SB('G'), SB(' '), SB('G'), SB('R'), SB('O'), SB('U'), SB('N'), SB('D'),
+  SB(' '), SB('!'), SBOL_END
+};
+static const SBOL str_dino_bri[] = {
+  SB('T'), SB('H'), SB('E'), SB(' '), SB('D'), SB('I'), SB('N'), SB('O'),
+  SB('C'), SB('H'), SB('R'), SB('O'), SB('M'), SB('E'), SB(' '), SB('B'),
+  SB('R'), SB('I'), SB('G'), SB('A'), SB('D'), SB('E'), SBOL_END
+};
+static const SBOL str_salutes_you[] = {
+  SB('S'), SB('A'), SB('L'), SB('U'), SB('T'), SB('E'), SB('S'), SB(' '),
+  SB('Y'), SB('O'), SB('U'), SB(' '), SB('!'), SBOL_END
+};
+// clang-format on
+static const SBOLDesc win_mstr[] = {
+    {str_congrats, VID_OFFSET(40, 40)},
+    {str_destroyed, VID_OFFSET(40, 72)},
+    {str_alien_pgnd, VID_OFFSET(8, 88)},
+    {str_dino_bri, VID_OFFSET(16, 136)},
+    {str_salutes_you, VID_OFFSET(56, 152)},
+    {NULL, 0},
+};
+
+/// 2913:0100                       start:
+static AsyncResult async_start(void) {
+  switch (async_state.start.state) {
+  case 0:
+    // 1. Check for memory
+    // 2. Check for EGA
+    // 3. Store original int 8, int 9 vectors.
+    // 4. Initialize rnd_state by copying the 32-bit 24hr counter 8 times (55ms
+    // precision).
+    // 5. time_5bit = system_timer & 0x1F;
+    // 6. Hook int 8 and int 9.
+    // 7. Set display mode.
+    async_state.title_screen.state = 0;
+    async_state.start.state = 1;
+    // FALL
+  case 1:
+    if (async_title_screen() == AS_UNWIND)
+      return AS_UNWIND;
+    async_state.start.state = 2;
+    // FALL
+  case 2:
+  case_2: // Game over.
+    update_hisco();
+    draw_hud();
+    draw_levsel();
+    async_state.edit_levdens.state = 0;
+    async_state.start.state = 3;
+    // FALL
+  case 3:
+    if (async_edit_levdens() == AS_UNWIND)
+      return AS_UNWIND;
+    async_state.start.state = 4;
+    // FALL
+  case 4:
+    lives = 5;
+
+    memset(strb_score, SBOL_SPACE, 5);
+    strb_score[5] = SBOL_0;
+
+    memset(var_188e, 3, NUM_ACTORS42);
+
+    if (lastkey_tick != 0) {
+      for (int i = 0; i != sizeof(rnd_state); ++i)
+        rnd_state[i] = i;
+      time_5bit = 0;
+    }
+
+    async_state.gen_maze.state = 0;
+    async_state.start.state = 5;
+    // FALL
+  case 5:
+  case_5:
+    if (async_gen_maze() == AS_UNWIND)
+      return AS_UNWIND;
+    async_state.start.state = 6;
+    // FALL
+  case 6:
+    proc_27();
+    var_186e = NUM_ACTORS42 - 2;
+    memset(coll_flags1, 0xFF, NUM_ACTORS42);
+    memset(ship_fire, 0, NUM_ACTORS32);
+
+    async_state.start.wait_until = time_tick + 20;
+    async_state.start.state = 7;
+    // FALL
+  case 7:
+    if (async_state.start.wait_until != time_tick)
+      return AS_UNWIND;
+    async_state.start.state = 8;
+    // FALL
+  case 8:
+  case_8:
+    draw_hud();
+    draw_lives();
+    memset(bullet_flags, 0xFF, NUM_ACTORS32);
+    kbdin_key = 0;
+    coll_flags1[0] = 0;
+    fire_req = 0;
+    ship_fire[0] = 0;
+    fuel_disp_e = 0;
+    init_ship_pos();
+    draw_radar();
+
+    async_state.start.state = 9;
+    // FALL
+  case 9:
+  case_9:;
+    //  Look for an non-destroyed base.
+    int base;
+    for (base = 0; base != NUM_BASES && base_194e[base] == 0xFF; ++base) {
+    }
+    if (base == NUM_BASES) {
+      draw_hud();
+      if (lives < 5)
+        ++lives;
+
+      ega_map_mask(EGAHighMagenta);
+      draw_mstrs(win_mstr);
+
+      async_state.start.wait_until = time_tick + 50;
+      async_state.start.state = 9;
+      // FALL
+    case 10:
+      if (time_tick != async_state.start.wait_until)
+        return AS_UNWIND;
+
+      async_state.gen_maze.state = 0;
+      async_state.start.state = 5;
+      goto case_5;
+    }
+    async_state.start.state = 11;
+    // FALL
+  case 11:
+    handle_kbd();
+    clr_alt_box(0 /* dest_seg ^ EGA_PAGE_SIZE */);
+    // proc_12();
+    // proc_43();
+    adjust_bullets();
+    proc_17();
+    draw_maze(0);
+    do_explosions(0);
+    // proc_31();
+    if (1) {
+      // Only for testing
+      static int angleVel[][2] = {
+          {0, -1},
+          {1, -1},
+          {1, 0},
+          {1, 1},
+          {0, 1},
+          {-1, 1},
+          {-1, 0},
+          {-1, -1},
+      };
+      int ship_dx = angleVel[ship_angle[0]][0] * vel_magn[0];
+      int ship_dy = angleVel[ship_angle[0]][1] * vel_magn[0];
+      if (vel_angle) {
+        ship_dx = -ship_dx;
+        ship_dy = -ship_dy;
+      }
+      ship_ofsx[0] += ship_dx;
+      if (ship_ofsx[0] < 0) {
+        ship_ofsx[0] += 38;
+        ship_cellx[0] -= 1;
+      } else if (ship_ofsx[0] >= 38) {
+        ship_ofsx[0] -= 38;
+        ship_cellx[0] += 1;
+      }
+      ship_ofsy[0] += ship_dy;
+      if (ship_ofsy[0] < 0) {
+        ship_ofsy[0] += 38;
+        ship_celly[0] -= 1;
+      } else if (ship_ofsy[0] >= 38) {
+        ship_ofsy[0] -= 38;
+        ship_celly[0] += 1;
+      }
+    }
+    draw_enemies(0);
+    if (coll_flags1[0] == 0)
+      draw_ship(0);
+    update_bullets(0);
+
+    bool die = false;
+    if (coll_flags1[0] == 0xFE) {
+      die = true;
+    } else if (ship_kind[0]) {
+      if (--ship_kind[0] == 0)
+        die = true;
+    } else {
+      if (coll_flags1[0]) {
+        vel_magn[0] = 0;
+        if (coll_flags1[0] & 0x80)
+          ship_kind[0] = 0x0A;
+      }
+    }
+
+    if (die) {
+      if (--lives == 0) {
+        // Game over.
+        async_state.start.state = 2;
+        goto case_2;
+      } else {
+        async_state.start.state = 8;
+        goto case_8;
+      }
+    }
+
+    // Next frame.
+    async_state.start.state = 12;
+    // FALL
+  case 12:
+  loc_19:
+    // Wait for the next tick.
+    if (time_tick == last_tick)
+      return AS_UNWIND;
+    last_tick = time_tick;
+    // flip_vp();
+    async_state.start.state = 9;
+    goto case_9;
+  }
+  return AS_UNWIND;
+}
+
+/// Invoked every 54.925 ms.
+static void int_08h_entry(void) {
+  ++time_tick;
+}
+
 /// Draw generating maze, clear alist_buf, init maze_buf
 /// 2913:0321                       init_maze       proc    near
-static void init_maze() {
-  ega_map_mask(EGAWhite);
-  draw_bmp(dest_seg + VID_OFFSET(16, 5), bmp_gmaze_22x7, 22, 7, EGAWhite);
+static AsyncResult async_init_maze(void) {
+  if (async_state.init_maze.state == 0) {
+    ega_map_mask(EGAWhite);
+    draw_bmp(dest_seg + VID_OFFSET(16, 5), bmp_gmaze_22x7, 22, 7, EGAWhite);
+
+    async_state.init_maze.state = 1;
+    return AS_UNWIND;
+  }
+
   memset(alist_buf, 0, MAZE_WIDTH * MAZE_HEIGHT);
 
   // This is the state of the buffer at the end (the middle has been collapsed):
@@ -471,6 +838,8 @@ static void init_maze() {
     b2[2] = W_R;
     b2 += MAZE_WIDTH;
   } while (--cnt);
+
+  return AS_NORMAL;
 }
 
 #ifndef NDEBUG
@@ -486,8 +855,16 @@ void dump_maze() {
 
 /// Populate the maze using the random generator.
 /// 2913:0377                       gen_maze        proc    near
-static void gen_maze() {
-  init_maze();
+static AsyncResult async_gen_maze(void) {
+  if (async_state.gen_maze.state == 0) {
+    async_state.init_maze.state = 0;
+    async_state.gen_maze.state = 1;
+  }
+  if (async_state.gen_maze.state == 1) {
+    if (async_init_maze() == AS_UNWIND)
+      return AS_UNWIND;
+    async_state.gen_maze.state = 2;
+  }
 
   unsigned cnt = (MAZE_HEIGHT - 6) * (MAZE_WIDTH - 3) - 1;
 
@@ -667,6 +1044,22 @@ static void gen_maze() {
       break;
     }
   } while (--rep);
+
+  return AS_NORMAL;
+}
+
+/// Clear the 0x0-224x194 pixel box in the alternative video page.
+/// We have changed to receive the destination page as a parameter.
+///
+/// 2913:04CA                       clr_alt_box     proc    near
+static void clr_alt_box(unsigned vidSeg) {
+  unsigned ofs = vidSeg;
+  for (int y = 0; y < 194; ++y, ofs += EGA_STRIDE) {
+    memset(g_ega_screen[0] + ofs, 0, 28);
+    memset(g_ega_screen[1] + ofs, 0, 28);
+    memset(g_ega_screen[2] + ofs, 0, 28);
+    memset(g_ega_screen[3] + ofs, 0, 28);
+  }
 }
 
 /// Clear both video pages and display page 0.
@@ -813,6 +1206,339 @@ static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1) {
   ega_or(ofs, 0xFF00 >> (lenm1 & 7), ega_mask);
 }
 
+/// 2913:062D                       int_09h_entry   proc    far
+static void int_09h_entry(uint8_t scanCode) {
+  kbdin_key = scanCode;
+}
+
+static const uint16_t reckeys[] = {
+    0x0306, 0x0704, 0x0111, 0x011E, 0x0111, 0x1111, 0x0E20, 0x251E, 0x0C1E, 0x0E20, 0x1720, 0x011E,
+    0x0B1E, 0x0D20, 0x2321, 0x0D1E, 0x011F, 0x0103, 0x0D21, 0x0621, 0x0121, 0x0120, 0x0102, 0x012D,
+    0x0321, 0x051F, 0x0721, 0x0B21, 0x0A21, 0x0121, 0x0120, 0x0120, 0x072D, 0x0321, 0x161E, 0x0321,
+    0x0111, 0x1F11, 0x0102, 0x0221, 0x011F, 0x0102, 0x0102, 0x0102, 0x0602, 0x0121, 0x0103, 0x0103,
+    0x0103, 0x0103, 0x0621, 0x0521, 0x0521, 0x031E, 0x0302, 0x0111, 0x4621,
+
+    0x8A01};
+
+/// Delay until the next recorded key.
+static uint8_t reckey_delay = 1;
+/// Next recorded key.
+static const uint16_t *reckey_offset = reckeys;
+
+/// 2913:0648                       getkey          proc    near
+static uint8_t getkey(void) {
+  // loc_52:                                         ;  xref 2913:06B6, 06BD
+  uint8_t scanCode = 0;
+  if (lastkey_tick != 0) {
+    if (kbdin_key != 0) {
+      kbdin_key = 0;
+      lastkey_tick = 0;
+      scanCode = SC_F3;
+    } else {
+      if (--reckey_delay == 0) {
+        unsigned pair = *reckey_offset++;
+        reckey_delay = pair >> 8;
+        scanCode = (uint8_t)pair;
+      }
+    }
+  } else {
+    scanCode = kbdin_key;
+    kbdin_key = 0;
+  }
+
+  if (scanCode == SC_ESC) {
+    // TODO: terminate.
+  }
+
+  if (scanCode == SC_F1) {
+    // TODO
+  } else if (scanCode == SC_F2) {
+    // TODO
+  } else if (scanCode == SC_F3) {
+    // TODO
+  }
+
+  return scanCode;
+}
+
+/// 2913:0692                       handle_kbd:
+static void handle_kbd(void) {
+  uint8_t key = getkey();
+  if (!key)
+    return;
+
+  if (coll_flags1[0])
+    return;
+
+  if (key > 0x53)
+    return;
+
+  switch (key) {
+  case 31:
+  case 38:
+  case 76:
+  case 79:
+    // sub_on_stop
+    vel_magn[0] = 0;
+    vel_angle = 0;
+    break;
+
+  case 17:
+  case 24:
+  case 72:
+    // sub_on_faster
+    if (vel_angle == 0) {
+      if (vel_magn[0] < 5)
+        ++vel_magn[0];
+    } else {
+      if (--vel_magn[0] == 0)
+        vel_angle = 0;
+    }
+    break;
+
+  case 45:
+  case 52:
+  case 80:
+    // sub_on_slower
+    if (vel_angle != 0) {
+      if (vel_magn[0] < 5)
+        ++vel_magn[0];
+    } else {
+      if (vel_magn[0]-- == 0) {
+        vel_magn[0] = 1;
+        vel_angle = 4;
+      }
+    }
+    break;
+
+  case 32:
+  case 39:
+  case 77:
+    // sub_on_right
+    ship_angle[0] = (ship_angle[0] + 1) & 7;
+    gun_angle = (gun_angle + 1) & 7;
+    draw_comp_arr();
+    break;
+
+  case 30:
+  case 37:
+  case 75:
+    // sub_on_left
+    ship_angle[0] = (ship_angle[0] - 1) & 7;
+    gun_angle = (gun_angle - 1) & 7;
+    draw_comp_arr();
+    break;
+
+  case 3:
+  case 12:
+  case 73:
+    // sub_gunright
+    gun_angle = (gun_angle + 1) & 7;
+    break;
+
+  case 2:
+  case 11:
+  case 71:
+    // sub_gunleft
+    gun_angle = (gun_angle - 1) & 7;
+    break;
+
+  default:
+    // sub_on_fire;
+    if (!fire_req)
+      fire_req = 1;
+    break;
+
+  case 1:
+    // sub_on_esc
+    break;
+
+  case 60:
+    // sub_onkey_F2
+    break;
+
+  case 61:
+    // proc_10
+    break;
+
+  case 68:
+    // proc_11
+    break;
+  }
+}
+
+/// Draw the small map in the right bottom of the screen
+/// 2913:0ACC                       proc_13         proc    near
+static void draw_map(unsigned shipCellX, unsigned shipCellY) {
+  ega_map_mask(EGAHighCyan);
+
+  shipCellY += 124;
+  shipCellX += 232;
+  unsigned vidOfs = vid_offset(shipCellX, shipCellY);
+  uint8_t vidMask = vid_mask(shipCellX);
+
+  ega_xor(vidOfs, vidMask, EGAHighCyan);
+  ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighCyan);
+
+  vidOfs += EGA_STRIDE * 2;
+  ega_xor(vidOfs, vidMask, EGAHighCyan);
+  ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighCyan);
+
+  vidOfs -= EGA_STRIDE;
+  ega_xor(vidOfs, vidMask, EGAHighCyan);
+  ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighCyan);
+
+  // One pixel to the left.
+  unsigned vidOfs1 = vidOfs;
+  uint8_t vidMask1;
+  if (vidMask & 0x80) {
+    --vidOfs1;
+    vidMask1 = 1;
+  } else {
+    vidMask1 = vidMask << 1;
+  }
+
+  ega_xor(vidOfs1, vidMask1, EGAHighCyan);
+  ega_xor(EGA_PAGE_SIZE + vidOfs1, vidMask1, EGAHighCyan);
+
+  // One pixel to the right.
+  if (vidMask & 1) {
+    ++vidOfs;
+    vidMask = 0x80;
+  } else {
+    vidMask >>= 1;
+  }
+  ega_xor(vidOfs, vidMask, EGAHighCyan);
+  ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighCyan);
+}
+
+/// Draw the radar showing the relative position of enemy bases.
+/// 2913:0B87                       proc_14         proc    near
+static void draw_radar(void) {
+  ega_map_mask(EGAHighGreen);
+
+  uint8_t bl_x = ship_cellx[0];
+  uint8_t bh_y = ship_celly[0];
+  int baseIndex = NUM_BASES - 1;
+  // Keep track of which radar cells should be lit, clock-wise.
+  // 1 - top left, 2 - top right, 4 - bottom right, 8 - bottom left.
+  // The 16 is used in order to cleverly terminate the drawing loop
+  // afterwards.
+  uint8_t radarFlags = 16;
+  do {
+    if (base_194e[baseIndex] > radarFlags)
+      continue;
+
+    // Radar flags for this base.
+    uint8_t baseRadarFlags = 0x0F;
+    if (base_cellx[baseIndex] < bl_x)
+      baseRadarFlags &= 9; // Clear top right, bottom right.
+    else if (base_cellx[baseIndex] > bl_x)
+      baseRadarFlags &= 6; // Clear top left, bottom left.
+
+    if (base_celly[baseIndex] < bh_y)
+      baseRadarFlags &= 3; // Clear bottom right, bottom left.
+    else if (base_celly[baseIndex] > bh_y)
+      baseRadarFlags &= 12; // Clear top left, top right.
+
+    radarFlags |= baseRadarFlags;
+  } while (--baseIndex >= 0);
+
+  /// Coordinates of every radar quarter:
+  /// top-left, top-right, bottom-right, bottom-left.
+  static const uint16_t radar_vid_ofsets[4] = {
+      VID_OFFSET(232, 94),
+      VID_OFFSET(248, 94),
+      VID_OFFSET(248, 109),
+      VID_OFFSET(232, 109),
+  };
+
+  const uint16_t *pVidOfs = radar_vid_ofsets;
+
+  uint8_t cf;
+  while ((cf = radarFlags & 1), radarFlags >>= 1) {
+    unsigned vidOfs = *pVidOfs++;
+    uint16_t bits = cf ? 0xF23F : 0x0200;
+    if (vidOfs & 2)
+      bits = (bits << 1) | (bits >> 15);
+
+    unsigned cx = 10;
+    do {
+      ega_write(vidOfs + EGA_PAGE_SIZE, (uint8_t)bits, EGAHighGreen);
+      ega_write(vidOfs + 1 + EGA_PAGE_SIZE, (uint8_t)(bits >> 8), EGAHighGreen);
+      ega_write(vidOfs, (uint8_t)bits, EGAHighGreen);
+      ega_write(vidOfs + 1, (uint8_t)(bits >> 8), EGAHighGreen);
+      vidOfs += EGA_STRIDE;
+    } while (--cx);
+  }
+}
+
+static const uint8_t compass_2x11[8][22] = {
+    {
+        0x00, 0x80, 0x01, 0xC0, 0x03, 0xE0, 0x01, 0xC0, 0x01, 0xC0, 0x01,
+        0xC0, 0x01, 0xC0, 0x01, 0xC0, 0x01, 0xC0, 0x01, 0xC0, 0x01, 0x40,
+    },
+    {
+        0x00, 0x00, 0x00, 0x78, 0x00, 0x38, 0x00, 0x78, 0x00, 0xE8, 0x01,
+        0xC0, 0x03, 0x80, 0x07, 0x00, 0x0E, 0x00, 0x04, 0x00, 0x00, 0x00,
+    },
+    {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x0F, 0xF0, 0x07,
+        0xF8, 0x0F, 0xF0, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    },
+    {
+        0x00, 0x00, 0x04, 0x00, 0x0E, 0x00, 0x07, 0x00, 0x03, 0x80, 0x01,
+        0xC0, 0x00, 0xE8, 0x00, 0x78, 0x00, 0x38, 0x00, 0x78, 0x00, 0x00,
+    },
+    {
+        0x01, 0x40, 0x01, 0xC0, 0x01, 0xC0, 0x01, 0xC0, 0x01, 0xC0, 0x01,
+        0xC0, 0x01, 0xC0, 0x01, 0xC0, 0x03, 0xE0, 0x01, 0xC0, 0x00, 0x80,
+    },
+    {
+        0x00, 0x00, 0x00, 0x10, 0x00, 0x38, 0x00, 0x70, 0x00, 0xE0, 0x01,
+        0xC0, 0x0B, 0x80, 0x0F, 0x00, 0x0E, 0x00, 0x0F, 0x00, 0x00, 0x00,
+    },
+    {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x07, 0xF8, 0x0F,
+        0xF0, 0x07, 0xF8, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    },
+    {
+        0x00, 0x00, 0x0F, 0x00, 0x0E, 0x00, 0x0F, 0x00, 0x0B, 0x80, 0x01,
+        0xC0, 0x00, 0xE0, 0x00, 0x70, 0x00, 0x38, 0x00, 0x10, 0x00, 0x00,
+    },
+};
+
+/// 2913:0BF5                       draw_comp_arr   proc    near
+static void draw_comp_arr(void) {
+  ega_map_mask(EGAHighCyan);
+  draw_bmp(VID_OFFSET(272, 101), compass_2x11[ship_angle[0]], 2, 11, EGAHighCyan);
+}
+
+/// Generate a random ship position, init ship state and draw the small map.
+/// 2913:0CD2                       proc_15         proc    near
+static void init_ship_pos(void) {
+  XYPtr xyp = maze_rnd_xy();
+  ship_cellx[0] = xyp.x;
+  ship_celly[0] = xyp.y;
+
+  proc_37(xyp.x, xyp.y);
+
+  ship_ofsx[0] = rnd_update(16) + 11;
+  ship_ofsy[0] = rnd_update(16) + 11;
+  ship_angle[0] = gun_angle = rnd_update(8);
+
+  var_188e[0] = 3;
+  coll_flags1[0] = 0;
+  vel_angle = 0;
+  ship_kind[0] = 0;
+  vel_magn[0] = 0;
+
+  draw_comp_arr();
+  draw_map(xyp.x, xyp.y);
+
+  fuel_level_e = 0x3FFF;
+}
+
 /// Draw rotated ship and gun and perform collision detection.
 /// Collision detection by counting screen bytes that already had
 /// the same bit set.
@@ -830,7 +1556,7 @@ static void draw_ship(unsigned pageSeg) {
     uint8_t pix = *gunbmp++ ^ *shipbmp++;
     if (pix & ega_read(offset))
       ++collisions;
-    ega_write(offset, pix, EGAHighCyan);
+    ega_or(offset, pix, EGAHighCyan);
     offset += EGA_STRIDE;
   } while (--cnt);
 
@@ -841,6 +1567,38 @@ static void draw_ship(unsigned pageSeg) {
     // Stop the ship.
     vel_magn[0] = 0;
     ship_kind[0] = 0xA;
+  }
+}
+
+static const uint8_t bmp_live_2x12[2 * 12] = {
+    0x03, 0x00, 0x03, 0x00, 0x33, 0x30, 0x33, 0x30, 0xFF, 0xFC, 0xFF, 0xFC,
+    0xFF, 0xFC, 0xFF, 0xFC, 0xFF, 0xFC, 0xFF, 0xFC, 0x30, 0x30, 0x30, 0x30,
+};
+
+/// 2913:0DF4                       proc_16         proc    near
+static void draw_lives(void) {
+  ega_map_mask(EGAHighCyan);
+  unsigned vidOfs = VID_OFFSET(232, 57);
+  uint8_t remaingLives = lives;
+  while (--remaingLives) {
+    // A simpler version of the code:
+    draw_bmp(vidOfs, bmp_live_2x12, 2, 12, EGAHighCyan);
+    vidOfs += 2;
+    /*
+    unsigned height = 12;
+    const uint8_t *bmpPtr = bmp_live_2x12;
+    do {
+      ega_write(vidOfs, bmpPtr[0], EGAHighCyan);
+      ega_write(vidOfs + 1, bmpPtr[1], EGAHighCyan);
+      ega_write(vidOfs + EGA_PAGE_SIZE, bmpPtr[0], EGAHighCyan);
+      ega_write(vidOfs + 1 + EGA_PAGE_SIZE, bmpPtr[1], EGAHighCyan);
+
+      bmpPtr += 2;
+      vidOfs += EGA_STRIDE;
+    } while (--height);
+
+    vidOfs -= 12 * EGA_STRIDE - 2;
+    */
   }
 }
 
@@ -908,26 +1666,43 @@ static const SBOLDesc title_mstr[] =
 
 /// Draw title screen, wait a little or until a key
 /// 2913:1194                       title_screen    proc    near
-static void title_screen(void) {
-  ega_map_mask(EGADarkGray);
+static AsyncResult async_title_screen(void) {
+  if (async_state.title_screen.state == 0) {
+    ega_map_mask(EGADarkGray);
 
-  for (unsigned row = 0; row < EGA_HEIGHT / (SPRITE_H + 1); ++row) {
-    for (unsigned col = 0; col != EGA_STRIDE; ++col) {
-      unsigned sprite = rndnum(NUM_SPRITES);
-      draw_bmp(
-          row * (SPRITE_H + 1) * EGA_STRIDE + col,
-          sprites_1x7 + sprite * SPRITE_H * SPRITE_W,
-          SPRITE_W,
-          SPRITE_H,
-          EGADarkGray);
+    for (unsigned row = 0; row < EGA_HEIGHT / (SPRITE_H + 1); ++row) {
+      for (unsigned col = 0; col != EGA_STRIDE; ++col) {
+        unsigned sprite = rndnum(NUM_SPRITES);
+        draw_bmp(
+            row * (SPRITE_H + 1) * EGA_STRIDE + col,
+            sprites_1x7 + sprite * SPRITE_H * SPRITE_W,
+            SPRITE_W,
+            SPRITE_H,
+            EGADarkGray);
+      }
     }
+
+    draw_bolo_8x20(0x538);
+    draw_mstrs(title_mstr);
+
+    if (1)
+      async_state.title_screen.wait_until = time_tick + 60;
+    else
+      async_state.title_screen.wait_until = time_tick + 1;
+    kbdin_key = 0;
+    async_state.title_screen.state = 1;
   }
 
-  draw_bolo_8x20(0x538);
-  draw_mstrs(title_mstr);
+  if (kbdin_key != 0) {
+    kbdin_key = 0;
+    return AS_NORMAL;
+  }
 
-  // TODO: wait for 0x3C ticks or a key (which is consumed) and update
-  //       lastkey_tick
+  if (async_state.title_screen.wait_until >= time_tick)
+    return AS_UNWIND;
+
+  lastkey_tick = async_state.title_screen.wait_until;
+  return AS_NORMAL;
 }
 
 static const SBOL str_level[] = {SB('l'), SB('e'), SB('v'), SB('e'), SB('l'), SBOL_END};
@@ -956,7 +1731,7 @@ static SBOLDesc lsel_mstr[] = {
 
 /// Draw the hud to the right
 /// 2913:11F9                       draw_hud        proc    near
-static void draw_hud() {
+static void draw_hud(void) {
   clear_vp0();
 
   unsigned pageOfs = 0;
@@ -980,7 +1755,7 @@ static void draw_hud() {
 
 /// Draw level selection on the left.
 /// 2913:1263                       draw_levsel     proc    near
-static void draw_levsel() {
+static void draw_levsel(void) {
   ega_map_mask(EGAWhite);
   draw_rect(0, 0x02, 0x1C, 0xCC, 0x1C);
   draw_rect(0, 0x02, 0x50, 0xCC, 0x1C);
@@ -995,6 +1770,62 @@ static void draw_levsel() {
   draw_str(VID_OFFSET(16, 44), strb_hisco);
   draw_char_1x7(VID_OFFSET(184, 34), (SBOL)(high_level + 1));
   draw_char_1x7(VID_OFFSET(184, 44), (SBOL)(high_dens + 1));
+}
+
+/// 2913:12BD                       edit_levdens    proc    near
+static AsyncResult async_edit_levdens(void) {
+  if (async_state.edit_levdens.state == 0) {
+    async_state.edit_digit.state = 0;
+    async_state.edit_levdens.state = 1;
+  }
+  if (async_state.edit_levdens.state == 1) {
+    if (async_edit_digit(&level, VID_OFFSET(152, 145), 10, level) == AS_UNWIND)
+      return AS_UNWIND;
+    async_state.edit_digit.state = 0;
+    async_state.edit_levdens.state = 2;
+  }
+  if (async_edit_digit(&density, VID_OFFSET(152, 155), 6, density) == AS_UNWIND)
+    return AS_UNWIND;
+  time_5bit = time_tick & TIME_5BIT_MASK;
+  return AS_NORMAL;
+}
+
+/// 2913:12E6                       edit_digit      proc    near
+static AsyncResult
+async_edit_digit(uint8_t *pDigit, unsigned vidOfs, uint8_t maxPlus1, uint8_t curDigit) {
+loop:
+  if (async_state.edit_digit.state == 0) {
+    ega_map_mask(EGAYellow);
+    ega_xor(vidOfs, 0xFF, EGAYellow);
+    async_state.edit_digit.wait_until = time_tick + 2;
+    async_state.edit_digit.state = 1;
+  }
+  if (async_state.edit_digit.state == 1) {
+    if (time_tick != async_state.edit_digit.wait_until)
+      return AS_UNWIND;
+    async_state.edit_digit.state = 2;
+  }
+  uint8_t scanCode = getkey();
+  if (scanCode == 0) {
+    async_state.edit_digit.state = 0;
+    goto loop;
+  }
+
+  uint8_t digit;
+  if (scanCode == SC_ENTER) {
+    kbdin_key = scanCode;
+    digit = curDigit;
+  } else {
+    if (scanCode < SC_1 || scanCode > SC_9) {
+      async_state.edit_digit.state = 0;
+      goto loop;
+    }
+    digit = scanCode - SC_1;
+  }
+  draw_char_1x7(vidOfs - 6 * EGA_STRIDE, (SBOL)(digit + 1));
+
+  *pDigit = digit;
+  return AS_NORMAL;
 }
 
 /// Draw a rectangle with 1-pixel lines.
@@ -1012,6 +1843,16 @@ static void draw_rect(unsigned seg, unsigned x, unsigned y, unsigned wm1, unsign
 /// 2913:13BC                       draw_bolo_8x20  proc    near
 static void draw_bolo_8x20(unsigned offset) {
   draw_bmp(offset, bmp_bolo_8x20, 8, 20, 0xA);
+}
+
+/// 2913:1473                       proc_17         proc    near
+static void proc_17(void) {
+  // FIXME: the rest of the routine
+  if (fire_req) {
+    fire_req = 0;
+    ship_fire[0] = 2;
+    shoot_bullet(0);
+  }
 }
 
 /// Move all bullets while checking if they are in screen and for collision.
@@ -1070,7 +1911,7 @@ static void update_bullets(unsigned seg) {
 /// Bullets coordinates are screen-relative, so they have to be adjusted as we
 /// move the ship/screen. We adjust them in the opposite direction of the ship.
 /// 2913:169C                       sub_20          proc    near
-static void adjust_bullets() {
+static void adjust_bullets(void) {
   if (vel_magn[0] == 0)
     return;
   StepXY step = step_xy[vel_magn[0]][(vel_angle + ship_angle[0]) & 7];
@@ -1306,7 +2147,7 @@ static void collide_cell(
       continue;
 
     if (coll70)
-      var_194e[coll_flags1[act] & 0x0F] = 0;
+      base_194e[coll_flags1[act] & 0x0F] = 0;
 
     var_188e[act] = 0x0A;
     coll_flags1[act] = 1;
@@ -1395,7 +2236,7 @@ static void explode_bullets(unsigned vidSeg) {
         unsigned vidOfs = vid_offset(x, y) + vidSeg;
         uint8_t vidMask = vid_mask(x);
 
-        unsigned bits = proc_26(*bmpPtr);
+        unsigned bits = rnd8(*bmpPtr);
         while (vidMask >>= 1)
           bits <<= 1;
 
@@ -1511,9 +2352,9 @@ static void draw_explosion(unsigned vidSeg, int actor) {
 
       /// 24 screen pixels.
       uint32_t bits;
-      bits = (uint32_t)proc_26(bmpPtr[0]) << 16;
-      bits += (uint32_t)proc_26(bmpPtr[1]) << 8;
-      bits += proc_26(bmpPtr[2]);
+      bits = (uint32_t)rnd8(bmpPtr[0]) << 16;
+      bits += (uint32_t)rnd8(bmpPtr[1]) << 8;
+      bits += rnd8(bmpPtr[2]);
 
       while (vidMask >>= 1)
         bits <<= 1;
@@ -1539,8 +2380,9 @@ static void draw_explosion(unsigned vidSeg, int actor) {
   playBoloSound(20, 21);
 }
 
+/// Explode collided ships and bullets.
 /// 2913:1C74                       proc_25         proc    near
-static void proc_25(unsigned vidSeg) {
+static void do_explosions(unsigned vidSeg) {
   ega_map_mask(EGAYellow);
   int actor = NUM_ACTORS42 - 1;
   do {
@@ -1562,9 +2404,10 @@ static void proc_25(unsigned vidSeg) {
   explode_bullets(vidSeg);
 }
 
-/// Obtain a random value from var_142[64] and mask it with the supplied mask.
+/// Generate an 8-bit random value and mask it. The generated values tend to
+/// have more bits set.
 /// 2913:1CB3                       proc_26         proc    near
-static uint8_t proc_26(uint8_t mask) {
+static uint8_t rnd8(uint8_t mask) {
   static const uint8_t var_142[64] = {
       0xFE, 0xFD, 0xFB, 0xF7, 0xEF, 0xDF, 0xBF, 0xFF, 0xFE, 0xFD, 0xFB, 0xF7, 0xEF,
       0xDF, 0xBF, 0xFF, 0xFE, 0xFD, 0xFB, 0xF7, 0xEF, 0xDF, 0xBF, 0xFF, 0xFA, 0xF6,
@@ -1578,6 +2421,283 @@ static uint8_t proc_26(uint8_t mask) {
 /// 2913:1CC7                       inc_fuel        proc    near
 static void inc_fuel(uint8_t dl) {
   // FIXME
+}
+
+/// 2913:1D17
+static void update_hisco(void) {
+  // FIXME
+}
+
+/// 2913:1D5A                       proc_27         proc    near
+static void proc_27(void) {
+  // clang-format off
+  static const uint8_t num_walls[16] = {
+      0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
+  };
+
+  static const uint8_t var_153[16] = {
+      W_L | W_T | W_R,
+      W_L | W_T | W_R,
+      W_L | W_T | W_R,
+      W_L | W_T | W_R,
+      W_L | W_T | W_R,
+      W_L | W_T | W_R,
+      W_L | W_T | W_R,
+      W_L | W_T | W_R,
+
+      W_L | W_R | W_B,
+      W_L | W_R | W_B,
+
+      W_L | W_T | W_B,
+      W_L | W_T | W_B,
+
+      W_L | W_R | W_B,
+      W_L | W_R | W_B,
+
+      W_T | W_R | W_B,
+      0
+  };
+  // clang-format on
+
+  int baseIndex = NUM_BASES - 1;
+  do {
+    XYPtr xyp;
+    for (;;) {
+      // FIXME: I had to add this loop because we ended up with negative
+      // coordinates when subtracting 4 in proc_34().
+      do {
+        xyp = maze_rnd_xy();
+      } while (xyp.x < 4 || xyp.y < 4);
+      uint8_t cellFlags = *xyp.ptr;
+      if (num_walls[cellFlags] == 3)
+        break;
+      *xyp.ptr = var_153[cellFlags];
+      proc_37(xyp.x, xyp.y);
+      *xyp.ptr = cellFlags;
+
+      if ((cellFlags & W_T) == 0) {
+        uint8_t tmp = var_207e[3 * 9 + 4];
+        if ((tmp & 0x80) || tmp == 8)
+          continue;
+      }
+      if ((cellFlags & W_R) == 0) {
+        uint8_t tmp = var_207e[4 * 9 + 5];
+        if ((tmp & 0x80) || tmp == 8)
+          continue;
+      }
+      if ((cellFlags | W_B) == 0) {
+        uint8_t tmp = var_207e[5 * 9 + 4];
+        if ((tmp & 0x80) || tmp == 8)
+          continue;
+      }
+      if ((cellFlags | W_L) == 0) {
+        uint8_t tmp = var_207e[4 * 9 + 3];
+        if ((tmp & 0x80) || tmp == 8)
+          continue;
+      }
+
+      break;
+    }
+
+    uint8_t tmp = *xyp.ptr;
+    base_cellfl[baseIndex] = tmp;
+    *xyp.ptr = tmp | CELL_FL;
+
+    base_cellx[baseIndex] = xyp.x;
+    base_celly[baseIndex] = xyp.y;
+    base_194e[baseIndex] = 0;
+    arr_2e[baseIndex] = 0;
+    arr_1e[baseIndex] = 28;
+  } while (--baseIndex >= 0);
+
+  memset(var_198e, 0xFF, sizeof(var_198e));
+}
+
+/// Defines wall flags for a 9x9 area cell box.
+static const uint8_t box9x9flags[9 * 9] = {
+    // clang-format off
+    W_L | W_T, W_T, W_T, W_T, W_T, W_T, W_T, W_T, W_T | W_R,
+    W_L,       0,   0,   0,   0,   0,   0,   0,   W_R,
+    W_L,       0,   0,   0,   0,   0,   0,   0,   W_R,
+    W_L,       0,   0,   0,   0,   0,   0,   0,   W_R,
+    W_L,       0,   0,   0,   0,   0,   0,   0,   W_R,
+    W_L,       0,   0,   0,   0,   0,   0,   0,   W_R,
+    W_L,       0,   0,   0,   0,   0,   0,   0,   W_R,
+    W_L,       0,   0,   0,   0,   0,   0,   0,   W_R,
+    W_L | W_B, W_B, W_B, W_B, W_B, W_B, W_B, W_B, W_R | W_B,
+    // clang-format on
+};
+
+/// Process an area of 9x9 cells with \p x and \p y in the center.
+/// Copy the area into var_214e while logically or-ing it with box9x9flags.
+/// Also set the corresponding byte in var_207e to 8 if the cell
+/// had bit 7 set (but why would it?).
+///
+/// 2913:2158                       proc_34         proc    near
+static void proc_34(int8_t x /*dl*/, int8_t y /*dh*/) {
+  uint8_t *cellPtr = maze_xy(x - 4, y - 4);
+
+  uint8_t *p_var_214e = var_214e;
+  const uint8_t *p_arr_1 = box9x9flags;
+  uint8_t *p_var_207e = var_207e;
+
+  uint8_t rowCount = 9;
+  do {
+    uint8_t cellCount = 9;
+    do {
+      uint8_t cellFlags = *cellPtr | *p_arr_1;
+      if (cellFlags & CELL_FL)
+        *p_var_207e = 8;
+      *p_var_214e = cellFlags;
+
+      ++cellPtr;
+      ++p_var_214e;
+      ++p_arr_1;
+      ++p_var_207e;
+    } while (--cellCount);
+    // Next row.
+    cellPtr += MAZE_WIDTH - 9;
+  } while (--rowCount);
+}
+
+/// Starting from the center point, check surrounding cells (left, up, right,
+/// down). If the cell in var_207e has high bit set, set it to 2 and do the same
+/// for its neighbours.
+///
+/// 2913:21D6                       proc_35         proc    near
+static void proc_35(void) {
+  uint8_t queueBuf[9 * 9]; // *(2913:5509=0)
+  uint8_t *head = queueBuf;
+  uint8_t *tail = queueBuf;
+
+  var_207e[4 * 9 + 4] = 8;
+  *tail++ = 4 * 9 + 4;
+
+  do {
+    // Read an index in the [9x9] matrix. Originally it is the middle
+    // point 4,4.
+    // There are two matrices:
+    // - var_214e[9x9] contains a modified copy of the original cells.
+    // - var_207[9x9] started with 0x80, with occasional(?) 8.
+    uint8_t index = *head++;
+    uint8_t cellFlags = var_214e[index];
+
+    // One to the left of original point.
+    --index;
+    if ((cellFlags & W_L) == 0) {
+      if (var_207e[index] & 0x80) {
+        var_207e[index] = 2;
+        *tail++ = index;
+      }
+    }
+
+    // Above original point.
+    index -= 8;
+    if ((cellFlags & W_T) == 0) {
+      if (var_207e[index] & 0x80) {
+        var_207e[index] = 4;
+        *tail++ = index;
+      }
+    }
+
+    // Right of original point
+    index += 10;
+    if ((cellFlags & W_R) == 0) {
+      if (var_207e[index] & 0x80) {
+        var_207e[index] = 6;
+        *tail++ = index;
+      }
+    }
+    cellFlags >>= 1;
+
+    // Below original point.
+    index += 8;
+    if ((cellFlags & W_B) == 0) {
+      if (var_207e[index] & 0x80) {
+        var_207e[index] = 0;
+        *tail++ = index;
+      }
+    }
+  } while (head != tail);
+}
+
+/// 2913:2244                       proc_36         proc    near
+static void proc_36(int8_t dl_x, int8_t dh_y) {
+  memset(var_207e, 0x80, 9 * 9);
+  proc_34(dl_x, dh_y);
+  proc_35();
+}
+
+typedef struct S7 {
+  /// Navigate in the 9x9 matrix. -1 left, +1, right, -9 up, +9 down.
+  int8_t dCell0;
+  int8_t dCell1;
+  /// Navigate in the 7x7 matrix. -1 left, +1, right, -7 up, +7 down.
+  int8_t d49_0;
+  int8_t d49_1;
+  uint8_t cellFlMask0;
+  uint8_t val49;
+  uint8_t cellFlMask1;
+} S7;
+
+// TODO: check row 5.
+static const S7 var_158[12] = {
+    // clang-format off
+  { -1,  0, -1,  0, CELL_FL | W_L, 0x0F, CELL_FL | W_L},
+  {  1,  0,  1,  0, CELL_FL | W_R, 0x0F, CELL_FL | W_R},
+  { -9,  0, -7,  0, CELL_FL | W_T, 0x0F, CELL_FL | W_T},
+  {  9,  0,  7,  0, CELL_FL | W_B, 0x0F, CELL_FL | W_B},
+  { -1, -9, -1, -7, CELL_FL | W_L, 0x03, CELL_FL | W_T},
+  //{  1,  9,  1,  7, CELL_FL | W_L /*W_R?*/, 0x09, CELL_FL | W_B},
+  {  1,  9,  1,  7, CELL_FL | W_R /*was W_L*/, 0x09, CELL_FL | W_B},
+  { -9, -1, -7, -1, CELL_FL | W_T, 0x0C, CELL_FL | W_L},
+  { -9,  1, -7,  1, CELL_FL | W_T, 0x09, CELL_FL | W_R},
+  {  1, -9,  1, -7, CELL_FL | W_R, 0x06, CELL_FL | W_T},
+  {  1,  9,  1,  7, CELL_FL | W_R, 0x0C, CELL_FL | W_B},
+  {  9, -1,  7, -1, CELL_FL | W_B, 0x06, CELL_FL | W_L},
+  {  9,  1,  7,  1, CELL_FL | W_B, 0x03, CELL_FL | W_R},
+    // clang-format on
+};
+
+/// 2913:22AB                       proc_37         proc    near
+static void proc_37(int8_t dl_x, int8_t dh_y) {
+  proc_36(dl_x, dh_y);
+
+  memset(buf49, 0, sizeof(buf49));
+
+  for (int i = 0; i < 12; ++i) {
+    int8_t dCell0 = var_158[i].dCell0;
+    int8_t dCell1 = var_158[i].dCell1;
+    int8_t d49_0 = var_158[i].d49_0;
+    int8_t d49_1 = var_158[i].d49_1;
+    uint8_t cellFlMask0 = var_158[i].cellFlMask0;
+    uint8_t val49 = var_158[i].val49;
+    uint8_t cellFlMask1 = var_158[i].cellFlMask1;
+
+    const uint8_t *p9x9Cell = var_214e + 9 * 4 + 4;
+    uint8_t ofs49b = 7 * 3 + 3;
+    for (int j = 0; j < 6; ++j) {
+      if (cellFlMask0 & *p9x9Cell)
+        break;
+
+      ofs49b += d49_0;
+      buf49[ofs49b] = val49;
+      p9x9Cell += dCell0;
+      val49 ^= 0x0F;
+
+      uint8_t tmp = d49_0;
+      d49_0 = d49_1;
+      d49_1 = tmp;
+
+      tmp = cellFlMask1;
+      cellFlMask1 = cellFlMask0;
+      cellFlMask0 = tmp;
+
+      tmp = dCell1;
+      dCell1 = dCell0;
+      dCell0 = tmp;
+    }
+  }
 }
 
 /// Calculate and return a pointer to alist_buf element.
@@ -1687,7 +2807,7 @@ static void draw_enemies(unsigned vidSeg) {
     var_188e[actor] = 0x0A;
 
     if (cFlags & 0x70)
-      var_194e[cFlags & 0x0F] = cFlags & 0xF0;
+      base_194e[cFlags & 0x0F] = cFlags & 0xF0;
 
     coll_flags1[actor] = 1;
 
@@ -1900,7 +3020,7 @@ static struct {
   sg_pipeline pip;
   sg_bindings bind;
 
-  double lastUpdate;
+  double lastTimerTickS;
   sound_queue_t fx;
 } state;
 
@@ -2076,21 +3196,13 @@ static void reset_game_state(void) {
 }
 
 static void init_game_state(void) {
-  // title_screen();
-  // draw_hud();
-  // draw_levsel();
-  // clear_vp0();
-  // draw_hud();
-  // draw_levsel();
-  density = 4;
-  gen_maze();
-
-  reset_game_state();
+  // density = 4;
+  // gen_maze();
+  //
+  // reset_game_state();
 }
 
 static void bolo_init(void) {
-  init_game_state();
-
   saudio_setup(&(saudio_desc){
       //.sample_rate = 44100,
       //.buffer_frames = 2048,
@@ -2099,7 +3211,7 @@ static void bolo_init(void) {
   });
 
   stm_setup();
-  state.lastUpdate = 0;
+  state.lastTimerTickS = stm_sec(stm_now());
 
   sg_setup(&(sg_desc){.context = sapp_sgcontext()});
 
@@ -2206,58 +3318,16 @@ static void playBoloSound(int ch_delay, int cl_length) {
   sound_queue_push(&state.fx, buffer, outLen);
 }
 
-static int ship_dx = 0;
-static int ship_dy = 0;
-static bool fire_req = false;
-
-static void render_test_frame(void) {
-  clear_vp0();
-  draw_hud();
-  draw_maze(0);
-  proc_25(0);
-  draw_enemies(0);
-
-  if (!coll_flags1[0]) {
-    draw_ship(0);
-
-    ship_ofsx[0] += ship_dx;
-    if (ship_ofsx[0] < 0) {
-      ship_ofsx[0] += 38;
-      ship_cellx[0] -= 1;
-    } else if (ship_ofsx[0] >= 38) {
-      ship_ofsx[0] -= 38;
-      ship_cellx[0] += 1;
-    }
-    ship_ofsy[0] += ship_dy;
-    if (ship_ofsy[0] < 0) {
-      ship_ofsy[0] += 38;
-      ship_celly[0] -= 1;
-    } else if (ship_ofsy[0] >= 38) {
-      ship_ofsy[0] -= 38;
-      ship_celly[0] += 1;
-    }
-  }
-
-  if (fire_req) {
-    fire_req = false;
-    shoot_bullet(0);
-  }
-  update_bullets(0);
-  adjust_bullets();
-}
-
 static void bolo_frame(void) {
   double newTime = stm_sec(stm_now());
 
-  if (state.lastUpdate == 0)
-    state.lastUpdate = newTime - 1. / 18.2;
-  if (newTime - state.lastUpdate >= 1. / 18.2) {
-    do {
-      state.lastUpdate += 1. / 18.2;
-      render_test_frame();
-    } while (newTime - state.lastUpdate >= 1. / 18.2);
-    bolo_update_screen();
+  while (newTime - state.lastTimerTickS >= TIMER_PERIOD_US * 1e-6) {
+    state.lastTimerTickS += TIMER_PERIOD_US * 1e-6;
+    int_08h_entry();
   }
+
+  async_start();
+  bolo_update_screen();
 
   sg_begin_default_pass(&state.pass_action, sapp_width(), sapp_height());
 
@@ -2290,59 +3360,43 @@ static void bolo_cleanup(void) {
   saudio_shutdown();
 }
 
-static int angleVel[][2] = {
-    {0, -1},
-    {1, -1},
-    {1, 0},
-    {1, 1},
-    {0, 1},
-    {-1, 1},
-    {-1, 0},
-    {-1, -1},
-};
-static bool keys[512];
+static uint8_t to_scan_code(sapp_keycode keycode) {
+  switch (keycode) {
+  case SAPP_KEYCODE_ESCAPE:
+    return SC_ESC;
+  case SAPP_KEYCODE_ENTER:
+    return SC_ENTER;
+  case SAPP_KEYCODE_SPACE:
+    return SC_SPACE;
+  case SAPP_KEYCODE_0:
+    return SC_0;
+  case SAPP_KEYCODE_LEFT:
+    return SC_LEFT;
+  case SAPP_KEYCODE_RIGHT:
+    return SC_RIGHT;
+  case SAPP_KEYCODE_UP:
+    return SC_UP;
+  case SAPP_KEYCODE_DOWN:
+    return SC_DOWN;
+  default:
+    break;
+  }
+
+  if (keycode >= SAPP_KEYCODE_1 && keycode <= SAPP_KEYCODE_9) {
+    return SC_1 + keycode - SAPP_KEYCODE_1;
+  }
+  if (keycode >= SAPP_KEYCODE_F1 && keycode <= SAPP_KEYCODE_F10) {
+    return SC_F1 + keycode - SAPP_KEYCODE_F1;
+  }
+
+  return 0;
+}
+
 static void bolo_event(const sapp_event *ev) {
   if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
-    keys[ev->key_code] = true;
-  } else if (ev->type == SAPP_EVENTTYPE_KEY_UP) {
-    keys[ev->key_code] = false;
-  }
-  if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
-    switch (ev->key_code) {
-    case SAPP_KEYCODE_1:
-      gun_angle = (gun_angle - 1) & 7;
-      break;
-    case SAPP_KEYCODE_2:
-      gun_angle = (gun_angle + 1) & 7;
-      break;
-    case SAPP_KEYCODE_LEFT:
-      ship_angle[0] = (ship_angle[0] - 1) & 7;
-      gun_angle = (gun_angle - 1) & 7;
-      break;
-    case SAPP_KEYCODE_RIGHT:
-      ship_angle[0] = (ship_angle[0] + 1) & 7;
-      gun_angle = (gun_angle + 1) & 7;
-      break;
-    case SAPP_KEYCODE_R:
-      reset_game_state();
-      break;
-    default:
-      break;
-    }
-  }
-
-  if (keys[SAPP_KEYCODE_UP]) {
-    ship_dx = angleVel[ship_angle[0]][0];
-    ship_dy = angleVel[ship_angle[0]][1];
-  } else if (keys[SAPP_KEYCODE_DOWN]) {
-    ship_dx = -angleVel[ship_angle[0]][0];
-    ship_dy = -angleVel[ship_angle[0]][1];
-  } else {
-    ship_dx = ship_dy = 0;
-  }
-
-  if (keys[SAPP_KEYCODE_SPACE]) {
-    fire_req = true;
+    uint8_t sc = to_scan_code(ev->key_code);
+    if (sc)
+      int_09h_entry(sc);
   }
 }
 

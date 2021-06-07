@@ -78,13 +78,13 @@ seg_a:0954   sub                sub_gunleft
 seg_a:095A   sub                sub_gunright
 seg_a:0964   sub                sub_on_fire
 seg_a:09E7   sub                proc_12
-seg_a:0ACC   sub                proc_13
+seg_a:0ACC   sub                draw_map        Draw the small map in the right bottom
 seg_a:0B14   sub, c 11          update_fuel
-seg_a:0B87   sub                proc_14
+seg_a:0B87   sub                draw_radar      Draw the radar showing relative position of bases
 seg_a:0BF5   sub, c 0C          draw_comp_arr
-seg_a:0CD2   sub                proc_15
+seg_a:0CD2   sub                init_ship_pos   Init ship position, state, and draw map
 seg_a:0D22   sub, c 0D          draw_ship
-seg_a:0DF4   sub                proc_16
+seg_a:0DF4   sub                draw_lives      Draw remaining lives represented as ships
 seg_a:0FE4   sub, c 03          draw_gmaze_22x7
 seg_a:0FFE   sub, c 14          draw_mstrs
 seg_a:100E   sub, c 06          draw_str
@@ -109,8 +109,8 @@ seg_a:17EF   sub, c 1B          bullet_collide
 seg_a:1893   sub, c 1C          collide_cell
 seg_a:1923   sub                explode_bullets
 seg_a:1A0B   sub                draw_explosion
-seg_a:1C74   sub                proc_25
-seg_a:1CB3   sub, c 1E          proc_26
+seg_a:1C74   sub                do_explosions
+seg_a:1CB3   sub, c 1E          rnd8            Generate an 8-bit random value and mask it
 seg_a:1CC7   sub, c 12          inc_fuel        Update the fuel level based on DL
 seg_a:1D17   sub                update_hisco    Update values of high score, level and density
 seg_a:1D5A   sub                proc_27
@@ -166,8 +166,8 @@ seg_a:0100   loc, far           start
 seg_a:0107   forced, od
 seg_a:010D   loc                                ; loc_1
 seg_a:0117   forced, od
-seg_a:011D   forced, od 0000
 seg_a:011D   loc                                ; loc_2
+seg_a:011D   forced, od 0000
 seg_a:0120   forced, od seg_a
 seg_a:012A   forced, od seg_a
 seg_a:012D   loc                                ; locloop_3
@@ -478,8 +478,8 @@ seg_a:1FA6   loc                                ; loc_232
 seg_a:1FA8   loc                                ; loc_233
 seg_a:1FB0   loc                                ; loc_234
 seg_a:1FB2   loc                                ; loc_235
-seg_a:1FCB   forced, od seg_a
 seg_a:1FCB   loc                                ; loc_236
+seg_a:1FCB   forced, od seg_a
 seg_a:1FCE   loc                                ; loc_237
 seg_a:1FDA   loc                                ; loc_238
 seg_a:1FEA   loc                                ; loc_239
@@ -513,6 +513,9 @@ seg_a:212E   forced, od seg_a
 seg_a:2133   loc                                ; locloop_252
 seg_a:2146   loc                                ; locloop_253
 seg_a:2157   loc                                ; loc_ret_254
+seg_a:215E   forced, od seg_a
+seg_a:2161   forced, od seg_a
+seg_a:2164   forced, od seg_a
 seg_a:216C   loc                                ; locloop_255
 seg_a:2170   loc                                ; loc_256
 seg_a:2178   loc                                ; loc_257
@@ -668,8 +671,8 @@ seg_a:2D1F   loc                                ; loc_396
 seg_a:2D22   loc                                ; loc_397
 seg_a:2D2E   loc                                ; loc_398
 seg_a:2D51   loc                                ; loc_399
-seg_a:2D63   forced, od seg_a
 seg_a:2D63   loc                                ; loc_400
+seg_a:2D63   forced, od seg_a
 seg_a:2D78   loc                                ; loc_401
 seg_a:2D88   loc                                ; loc_402
 seg_a:2D9E   loc                                ; loc_403
@@ -724,11 +727,12 @@ seg_a:0464   dw, osn, r 4       var_18
 seg_a:06F7   da, r 0A7          var_25
 seg_a:07EC   da, r 57           var_28
 seg_a:0844   dw, osn, r 54      kbd_funcs       Handlers for each scan code
-seg_a:0970   db                 var_89
-seg_a:0971   dw                 var_90
+seg_a:0970   db                 reckey_delay    Delay until next recorded key
+seg_a:0971   dw, odn            reckey_offset   Offset of next recorded key
 seg_a:0973   db                 lastkey_tick    Perhaps the tick when we last consumed a key
+seg_a:0974   dw, r 39           reckeys         Recorded keys
 seg_a:0A6C   dw, r 30           step_xy         i8 step_xy[6][8][2]  x,y step per magnitude and direction
-seg_a:0B7F   db                 var_92
+seg_a:0B7F   dw, r 4            var_92
 seg_a:0C20   dw, odn, r 8       comp_offs       Offsets of 8 compass arrow bmps
 seg_a:0C30   db                 var_93
 seg_a:0C46   db                 var_94
@@ -752,7 +756,7 @@ seg_a:0DC7   db                 var_110
 seg_a:0DCB   db                 var_111
 seg_a:0DD1   db                 var_112
 seg_a:0DD5   db                 var_113
-seg_a:0DDC   db                 var_114
+seg_a:0DDC   db                 bmp_live_2x12   One "live" (a ship)
 seg_a:0E1D   db, r 111          bmps_font_1x7   39x1x7 "0-9A-Z! c"
 seg_a:0F2E   db                 unknown1
 seg_a:0F4A   db, r 9A           bmp_gmaze_22x7  "GENERATING MAZE"
@@ -851,9 +855,10 @@ seg_a:1B81   db                 bmp_expl4
 seg_a:1BBA   db                 bmp_expl5
 seg_a:1BF6   db                 bmp_expl6
 seg_a:1C35   db                 bmp_expl7
-seg_a:1DE5   db                 var_152
+seg_a:1DE5   db                 num_walls
 seg_a:1DF4   db                 var_153
 seg_a:1FBB   db                 var_155
+seg_a:2185   db                 box9x9flags
 seg_a:2257   db                 var_158
 seg_a:2458   db                 var_159
 seg_a:245C   dw                 var_160
@@ -891,7 +896,7 @@ seg_a:2F68   db, r 20           rnd_state       Possibly the state of the random
 2913:4087    db, equ, index     var_181e
 2913:4F89    db, equ, index     var_182e
 2913:4F8A    dw, equ, index     dest_seg_e      Destination segment for copy
-2913:4F8C    db, equ, index     var_184e
+2913:4F8C    db, equ, index     last_tick       Used to control frame rate
 2913:4F8D    dd, equ, index     orig_int8_e
 2913:4F91    dd, equ, index     orig_int9_e
 2913:4F95    db, equ, index     kbdin_key_e     Updated by kbd int on keydn
@@ -918,12 +923,14 @@ seg_a:2F68   db, r 20           rnd_state       Possibly the state of the random
 2913:5199    db, equ, index     bullet_y_e
 2913:51B9    db, equ, index     bullet_fl_e
 2913:51D9    db, equ, index     bullet_angle_e
-2913:51F9    db, equ, index     maybe_fire_e
-2913:5219    db, equ, index     var_193e
-2913:521A    db, equ, index     var_194e
-2913:5220    db, equ, index     var_195e
-2913:5226    db, equ, index     var_196e
-2913:522C    db, equ, index     var_197e
+2913:51F9    db, equ, index     ship_fire_e     Flags for ship firing
+2913:5219    db, equ, index     fire_req_e      The fire key was pressed
+2913:521A    db, equ, index     base_194e
+2913:5220    db, equ, index     base_cellx_e
+2913:5226    db, equ, index     base_celly_e
+2913:522C    db, equ, index     base_cellfl_e
+2913:5232    db, equ, index     arr_1e
+2913:5238    db, equ, index     arr_2e
 2913:523E    db, equ, index     var_198e
 2913:5240    db, equ, index     var_199e
 2913:529D    db, equ, index     var_200e
@@ -939,7 +946,7 @@ seg_a:2F68   db, r 20           rnd_state       Possibly the state of the random
 2913:545E    db, equ, index     var_210e
 2913:545F    db, equ, index     var_211e
 2913:5467    db, equ, index     var_212e
-2913:5487    db, equ, index     var_213e
+2913:5487    db, equ, index     buf49
 2913:54B8    db, equ, index     var_214e
 2913:54E0    db, equ, index     var_215e
 2913:5509    db, equ, index     var_216e
