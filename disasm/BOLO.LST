@@ -1,4 +1,4 @@
-            BOLO.LST                                            Sourcer v8.01   6-Jun-2021  6:43 pm   Page 1
+            BOLO.LST                                            Sourcer v8.01   7-Jun-2021  8:55 pm   Page 1
 
 
                                 PAGE  59,132
@@ -19,7 +19,7 @@
 
      = 0020                     var_1e          equ     20h                     ; (0000:0020=0A5h)
      = 00CA                     var_2e          equ     0CAh                    ; (0000:00CA=0)
-     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=0BA88h)
+     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=0EF16h)
      = 0487                     video_options_  equ     487h                    ; (0000:0487=60h)
      = 5487                     var_3e          equ     5487h                   ;*(0200:5487=74h)
      = 0005                     var_4e          equ     5                       ; (2913:0005=0)
@@ -129,12 +129,12 @@
 2913:012D                       locloop_3:                                      ;  xref 2913:0136
 2913:012D  F6 C1 03                             test    cl,3
 2913:0130  75 03                                jnz     loc_4
-2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=88h)
+2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=16h)
 2913:0135                       loc_4:                                          ;  xref 2913:0130
 2913:0135  A4                                   movsb
 2913:0136  E2 F5                                loop    locloop_3
 
-2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=88h)
+2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=16h)
 2913:013B  0E                                   push    cs
 2913:013C  1F                                   pop     ds
 2913:013D  24 1F                                and     al,1Fh
@@ -248,7 +248,7 @@
 2913:0223                       loc_14:                                         ;  xref 2913:01F7
 2913:0223  E8 046C                              call    handle_kbd              ; (0692)
 2913:0226  E8 02A1                              call    clr_alt_box             ; (04CA)
-2913:0229  E8 07BB                              call    proc_12                 ; (09E7)
+2913:0229  E8 07BB                              call    update_ship             ; (09E7)
 2913:022C  E8 24BE                              call    proc_43                 ; (26ED)
 2913:022F  E8 146A                              call    adjust_bullets          ; (169C)
 2913:0232  E8 123E                              call    proc_17                 ; (1473)
@@ -1459,12 +1459,12 @@
 2913:09E6  01                                   db      1
 
                                 ;==========================================================================
-                                ;                          proc_12
+                                ;         Move the main ship, update map and radar
                                 ;
                                 ;         Called from:   2913:0229
                                 ;==========================================================================
 
-2913:09E7                       proc_12         proc    near
+2913:09E7                       update_ship     proc    near
 2913:09E7  8A 26 50D7                           mov     ah,ds:ship_angle_e      ; (2913:50D7=0)
 2913:09EB  02 26 5178                           add     ah,ds:vel_angle_e       ; (2913:5178=0)
 2913:09EF  80 E4 07                             and     ah,7
@@ -1477,7 +1477,7 @@
 2913:09FF  98                                   cbw
 2913:0A00  D1 E0                                shl     ax,1
 2913:0A02  8B F0                                mov     si,ax
-2913:0A04  8B 94 0A6C                           mov     dx,step_xy[si]          ; (2913:0A6C=0)
+2913:0A04  8B 94 0A6C                           mov     dx,word ptr step_xy[si] ; (2913:0A6C=0)
 2913:0A08  8A 1E 4F9B                           mov     bl,ds:ship_cellx        ; (2913:4F9B=0)
 2913:0A0C  8A 3E 4FC5                           mov     bh,ds:ship_celly        ; (2913:4FC5=0)
 2913:0A10  B0 26                                mov     al,26h                  ; '&'
@@ -1518,26 +1518,26 @@
 2913:0A68                       loc_75:                                         ;  xref 2913:09FB, 0A58
 2913:0A68  E8 00A9                              call    update_fuel             ; (0B14)
 2913:0A6B  C3                                   retn
-                                proc_12         endp
+                                update_ship     endp
 
-2913:0A6C  0000 0000 0000       step_xy         dw      0, 0, 0                 ; i8 step_xy[6][8][2]  x,y step
+2913:0A6C  00 00 00 00 00 00    step_xy         db       00h, 00h, 00h, 00h, 00h, 00h ; i8 step_xy[6][8][2]  x,y step
                                                                                 ;  per magnitude and direction
                                                                                 ;  xref 2913:0A04, 16B8, 27AA
-2913:0A72  0000 0000 0000                       dw      0, 0, 0
-2913:0A78  0000 0000 FF00                       dw      0, 0, 0FF00h
-2913:0A7E  FF01 0001 0101                       dw      0FF01h, 1, 101h
-2913:0A84  0100 01FF 00FF                       dw      100h, 1FFh, 0FFh
-2913:0A8A  FFFF FE00 FE02                       dw      0FFFFh, 0FE00h, 0FE02h
-2913:0A90  0002 0202 0200                       dw      2, 202h, 200h
-2913:0A96  02FE 00FE FEFE                       dw      2FEh, 0FEh, 0FEFEh
-2913:0A9C  FD00 FD03 0003                       dw      0FD00h, 0FD03h, 3
-2913:0AA2  0303 0300 03FD                       dw      303h, 300h, 3FDh
-2913:0AA8  00FD FDFD FC00                       dw      0FDh, 0FDFDh, 0FC00h
-2913:0AAE  FC04 0004 0404                       dw      0FC04h, 4, 404h
-2913:0AB4  0400 04FC 00FC                       dw      400h, 4FCh, 0FCh
-2913:0ABA  FCFC FB00 FB05                       dw      0FCFCh, 0FB00h, 0FB05h
-2913:0AC0  0005 0505 0500                       dw      5, 505h, 500h
-2913:0AC6  05FB 00FB FBFB                       dw      5FBh, 0FBh, 0FBFBh
+2913:0A72  00 00 00 00 00 00                    db       00h, 00h, 00h, 00h, 00h, 00h
+2913:0A78  00 00 00 00 00 FF                    db       00h, 00h, 00h, 00h, 00h,0FFh
+2913:0A7E  01 FF 01 00 01 01                    db       01h,0FFh, 01h, 00h, 01h, 01h
+2913:0A84  00 01 FF 01 FF 00                    db       00h, 01h,0FFh, 01h,0FFh, 00h
+2913:0A8A  FF FF 00 FE 02 FE                    db      0FFh,0FFh, 00h,0FEh, 02h,0FEh
+2913:0A90  02 00 02 02 00 02                    db       02h, 00h, 02h, 02h, 00h, 02h
+2913:0A96  FE 02 FE 00 FE FE                    db      0FEh, 02h,0FEh, 00h,0FEh,0FEh
+2913:0A9C  00 FD 03 FD 03 00                    db       00h,0FDh, 03h,0FDh, 03h, 00h
+2913:0AA2  03 03 00 03 FD 03                    db       03h, 03h, 00h, 03h,0FDh, 03h
+2913:0AA8  FD 00 FD FD 00 FC                    db      0FDh, 00h,0FDh,0FDh, 00h,0FCh
+2913:0AAE  04 FC 04 00 04 04                    db       04h,0FCh, 04h, 00h, 04h, 04h
+2913:0AB4  00 04 FC 04 FC 00                    db       00h, 04h,0FCh, 04h,0FCh, 00h
+2913:0ABA  FC FC 00 FB 05 FB                    db      0FCh,0FCh, 00h,0FBh, 05h,0FBh
+2913:0AC0  05 00 05 05 00 05                    db       05h, 00h, 05h, 05h, 00h, 05h
+2913:0AC6  FB 05 FB 00 FB FB                    db      0FBh, 05h,0FBh, 00h,0FBh,0FBh
 
                                 ;==========================================================================
                                 ;         Draw the small map in the right bottom
@@ -2986,7 +2986,7 @@
 2913:16B2  74 33                                jz      loc_ret_140
 2913:16B4  02 D8                                add     bl,al
 2913:16B6  D0 E3                                shl     bl,1
-2913:16B8  8B 97 0A6C                           mov     dx,step_xy[bx]          ; (2913:0A6C=0)
+2913:16B8  8B 97 0A6C                           mov     dx,word ptr step_xy[bx] ; (2913:0A6C=0)
 2913:16BC  F6 DA                                neg     dl
 2913:16BE  F6 DE                                neg     dh
 2913:16C0 .BE 001E                              mov     si,var_7e               ; (2913:001E=0)
@@ -5127,7 +5127,7 @@
 2913:27A5  98                                   cbw
 2913:27A6  D1 E0                                shl     ax,1
 2913:27A8  8B F8                                mov     di,ax
-2913:27AA  8B 85 0A6C                           mov     ax,step_xy[di]          ; (2913:0A6C=0)
+2913:27AA  8B 85 0A6C                           mov     ax,word ptr step_xy[di] ; (2913:0A6C=0)
 2913:27AE  02 D0                                add     dl,al
 2913:27B0  B0 26                                mov     al,26h                  ; '&'
 2913:27B2  78 0A                                js      loc_303

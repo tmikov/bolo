@@ -311,6 +311,9 @@ static void vert_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
 static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
 static uint8_t getkey(void);
 static void handle_kbd(void);
+static void update_ship(void);
+static void draw_map(unsigned shipCellX, unsigned shipCellY);
+static void update_fuel(void);
 static void draw_radar(void);
 static void draw_comp_arr(void);
 static void init_ship_pos(void);
@@ -676,48 +679,13 @@ static AsyncResult async_start(void) {
   case 11:
     handle_kbd();
     clr_alt_box(0 /* dest_seg ^ EGA_PAGE_SIZE */);
-    // proc_12();
+    update_ship();
     // proc_43();
     adjust_bullets();
     proc_17();
     draw_maze(0);
     do_explosions(0);
     // proc_31();
-    if (1) {
-      // Only for testing
-      static int angleVel[][2] = {
-          {0, -1},
-          {1, -1},
-          {1, 0},
-          {1, 1},
-          {0, 1},
-          {-1, 1},
-          {-1, 0},
-          {-1, -1},
-      };
-      int ship_dx = angleVel[ship_angle[0]][0] * vel_magn[0];
-      int ship_dy = angleVel[ship_angle[0]][1] * vel_magn[0];
-      if (vel_angle) {
-        ship_dx = -ship_dx;
-        ship_dy = -ship_dy;
-      }
-      ship_ofsx[0] += ship_dx;
-      if (ship_ofsx[0] < 0) {
-        ship_ofsx[0] += 38;
-        ship_cellx[0] -= 1;
-      } else if (ship_ofsx[0] >= 38) {
-        ship_ofsx[0] -= 38;
-        ship_cellx[0] += 1;
-      }
-      ship_ofsy[0] += ship_dy;
-      if (ship_ofsy[0] < 0) {
-        ship_ofsy[0] += 38;
-        ship_celly[0] -= 1;
-      } else if (ship_ofsy[0] >= 38) {
-        ship_ofsy[0] -= 38;
-        ship_celly[0] += 1;
-      }
-    }
     draw_enemies(0);
     if (coll_flags1[0] == 0)
       draw_ship(0);
@@ -1367,6 +1335,55 @@ static void handle_kbd(void) {
   }
 }
 
+/// Move the main ship, update map and radar.
+///
+/// 2913:09E7                       proc_12         proc    near
+static void update_ship(void) {
+  if (vel_magn[0]) {
+    StepXY step = step_xy[vel_magn[0]][(ship_angle[0] + vel_angle) & 7];
+    bool cellChanged = false;
+    uint8_t oldCellX = ship_cellx[0];
+    uint8_t oldCellY = ship_celly[0];
+
+    ship_ofsx[0] += step.x;
+    if (ship_ofsx[0] >= 0) {
+      if (ship_ofsx[0] >= CELL_SIZE) {
+        ship_ofsx[0] -= CELL_SIZE;
+        ++ship_cellx[0];
+        cellChanged = true;
+      }
+    } else {
+      ship_ofsx[0] += CELL_SIZE;
+      --ship_cellx[0];
+      cellChanged = true;
+    }
+
+    ship_ofsy[0] += step.y;
+    if (ship_ofsy[0] >= 0) {
+      if (ship_ofsy[0] >= CELL_SIZE) {
+        ship_ofsy[0] -= CELL_SIZE;
+        ++ship_celly[0];
+        cellChanged = true;
+      }
+    } else {
+      ship_ofsy[0] += CELL_SIZE;
+      --ship_celly[0];
+      cellChanged = true;
+    }
+
+    if (cellChanged) {
+      // Erase previous map.
+      draw_map(oldCellX, oldCellY);
+      draw_radar();
+      // Draw new map.
+      draw_map(ship_cellx[0], ship_celly[0]);
+      proc_37(ship_cellx[0], ship_celly[0]);
+    }
+  }
+
+  update_fuel();
+}
+
 /// Draw the small map in the right bottom of the screen
 /// 2913:0ACC                       proc_13         proc    near
 static void draw_map(unsigned shipCellX, unsigned shipCellY) {
@@ -1410,6 +1427,11 @@ static void draw_map(unsigned shipCellX, unsigned shipCellY) {
   }
   ega_xor(vidOfs, vidMask, EGAHighCyan);
   ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighCyan);
+}
+
+/// 2913:0B14                       update_fuel     proc    near
+static void update_fuel(void) {
+  // FIXME
 }
 
 /// Draw the radar showing the relative position of enemy bases.

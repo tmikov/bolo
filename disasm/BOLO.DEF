@@ -77,7 +77,7 @@ seg_a:0948   sub                sub_on_left
 seg_a:0954   sub                sub_gunleft
 seg_a:095A   sub                sub_gunright
 seg_a:0964   sub                sub_on_fire
-seg_a:09E7   sub                proc_12
+seg_a:09E7   sub                update_ship     Move the main ship, update map and radar
 seg_a:0ACC   sub                draw_map        Draw the small map in the right bottom
 seg_a:0B14   sub, c 11          update_fuel
 seg_a:0B87   sub                draw_radar      Draw the radar showing relative position of bases
@@ -731,7 +731,7 @@ seg_a:0970   db                 reckey_delay    Delay until next recorded key
 seg_a:0971   dw, odn            reckey_offset   Offset of next recorded key
 seg_a:0973   db                 lastkey_tick    Perhaps the tick when we last consumed a key
 seg_a:0974   dw, r 39           reckeys         Recorded keys
-seg_a:0A6C   dw, r 30           step_xy         i8 step_xy[6][8][2]  x,y step per magnitude and direction
+seg_a:0A6C   db, r 60           step_xy         i8 step_xy[6][8][2]  x,y step per magnitude and direction
 seg_a:0B7F   dw, r 4            var_92
 seg_a:0C20   dw, odn, r 8       comp_offs       Offsets of 8 compass arrow bmps
 seg_a:0C30   db                 var_93
