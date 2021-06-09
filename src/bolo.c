@@ -326,7 +326,7 @@ static void proc_17(void);
 static void update_bullets(unsigned seg);
 static void adjust_bullets(void);
 static void shoot_bullet(unsigned actor);
-static inline bool in_screen(uint8_t x, uint8_t y);
+static inline bool in_screen(int x, int y);
 
 typedef struct XYFlag {
   /// The "signedness" of the resulting 8-bit values is tricky. They are declared
@@ -1889,12 +1889,12 @@ static void update_bullets(unsigned seg) {
 
     StepXY step = step_xy[1][bullet_angle[i]];
 
-    uint8_t x = bullet_x[i];
-    uint8_t y = bullet_y[i];
+    int x = bullet_x[i];
+    int y = bullet_y[i];
 
     // Check the bullet for collision and in-screen 12 steps ahead.
-    uint8_t curX = x;
-    uint8_t curY = y;
+    int curX = x;
+    int curY = y;
     unsigned steps = 12;
     do {
       if (ega_test(seg + vid_offset(curX, curY), vid_mask(curX)) == 0) {
@@ -1941,8 +1941,8 @@ static void adjust_bullets(void) {
   do {
     if (bullet_flags[i] & 0x80)
       continue;
-    uint8_t x = bullet_x[i] - step.x;
-    uint8_t y = bullet_y[i] - step.y;
+    int x = bullet_x[i] - step.x;
+    int y = bullet_y[i] - step.y;
     if (in_screen(x, y)) {
       bullet_x[i] = x;
       bullet_y[i] = y;
@@ -1994,8 +1994,9 @@ static void shoot_bullet(unsigned actor) {
 
 // \return true if x < MAZE_SCREEN_W and y < MAZE_SCREEN_H;
 // 2913:1762                       sub_22          proc    near
-static inline bool in_screen(uint8_t x, uint8_t y) {
-  return x < MAZE_SCREEN_W && y < MAZE_SCREEN_H;
+static inline bool in_screen(int x, int y) {
+  // Note: this was originally written to use unsigned uint8_t comparisons.
+  return x >= 0 && x < MAZE_SCREEN_W && y >= 0 && y < MAZE_SCREEN_H;
 }
 
 /// Convert cell coordinate and offset into screen-relative coordinates if they
