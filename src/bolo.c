@@ -360,7 +360,7 @@ static void do_explosions(unsigned vidSeg);
 static uint8_t rnd8(uint8_t mask);
 static void inc_fuel(uint8_t dl);
 static void update_hisco(void);
-static void proc_27(void);
+static void gen_enemy_bases(void);
 static void proc_37(int8_t dl_x, int8_t dh_y);
 static uint8_t *alist_xy(int8_t x, int8_t y);
 static void add_actor(unsigned actor, int8_t cellX, int8_t cellY);
@@ -621,7 +621,7 @@ static AsyncResult async_start(void) {
     async_state.start.state = 6;
     // FALL
   case 6:
-    proc_27();
+    gen_enemy_bases();
     var_186e = NUM_ACTORS42 - 2;
     memset(coll_flags1, 0xFF, NUM_ACTORS42);
     memset(ship_fire, 0, NUM_ACTORS32);
@@ -2451,7 +2451,7 @@ static void update_hisco(void) {
 }
 
 /// 2913:1D5A                       proc_27         proc    near
-static void proc_27(void) {
+static void gen_enemy_bases(void) {
   // clang-format off
   static const uint8_t num_walls[16] = {
       0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,

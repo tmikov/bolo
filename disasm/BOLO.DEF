@@ -113,7 +113,7 @@ seg_a:1C74   sub                do_explosions
 seg_a:1CB3   sub, c 1E          rnd8            Generate an 8-bit random value and mask it
 seg_a:1CC7   sub, c 12          inc_fuel        Update the fuel level based on DL
 seg_a:1D17   sub                update_hisco    Update values of high score, level and density
-seg_a:1D5A   sub                proc_27
+seg_a:1D5A   sub                gen_enemy_bases
 seg_a:1E03   sub                proc_28
 seg_a:1EEF   sub                proc_29
 seg_a:1F63   sub                proc_30
