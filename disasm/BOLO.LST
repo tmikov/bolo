@@ -1,4 +1,4 @@
-            BOLO.LST                                            Sourcer v8.01   8-Jun-2021  9:18 am   Page 1
+            BOLO.LST                                            Sourcer v8.01  24-Jun-2021 10:48 pm   Page 1
 
 
                                 PAGE  59,132
@@ -19,7 +19,7 @@
 
      = 0020                     var_1e          equ     20h                     ; (0000:0020=0A5h)
      = 00CA                     var_2e          equ     0CAh                    ; (0000:00CA=0)
-     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=4ECDh)
+     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=0D064h)
      = 0487                     video_options_  equ     487h                    ; (0000:0487=60h)
      = 5487                     var_3e          equ     5487h                   ;*(0200:5487=74h)
      = 0005                     var_4e          equ     5                       ; (2913:0005=0)
@@ -70,13 +70,14 @@
      = 522C                     base_cellfl_e   equ     522Ch                   ;*(2913:522C=0)
      = 5232                     arr_1e          equ     5232h                   ;*(2913:5232=0)
      = 5238                     arr_2e          equ     5238h                   ;*(2913:5238=0)
-     = 523E                     var_198e        equ     523Eh                   ;*(2913:523E=0)
+     = 523E                     base_bits_top   equ     523Eh                   ;*(2913:523E=0)
      = 5240                     var_199e        equ     5240h                   ;*(2913:5240=0)
+     = 5292                     base_bits_btm   equ     5292h                   ;*(2913:5292=0)
      = 529D                     var_200e        equ     529Dh                   ;*(2913:529D=0)
-     = 52E6                     var_201e        equ     52E6h                   ;*(2913:52E6=0)
+     = 52E6                     base_bits_rgt   equ     52E6h                   ;*(2913:52E6=0)
      = 52EC                     var_202e        equ     52ECh                   ;*(2913:52EC=0)
      = 5300                     var_203e        equ     5300h                   ;*(2913:5300=0)
-     = 538E                     var_204e        equ     538Eh                   ;*(2913:538E=0)
+     = 538E                     base_bits_lft   equ     538Eh                   ;*(2913:538E=0)
      = 5394                     var_205e        equ     5394h                   ;*(2913:5394=0)
      = 53A8                     var_206e        equ     53A8h                   ;*(2913:53A8=0)
      = 5436                     var_207e        equ     5436h                   ;*(2913:5436=0)
@@ -129,12 +130,12 @@
 2913:012D                       locloop_3:                                      ;  xref 2913:0136
 2913:012D  F6 C1 03                             test    cl,3
 2913:0130  75 03                                jnz     loc_4
-2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=0CDh)
+2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=64h)
 2913:0135                       loc_4:                                          ;  xref 2913:0130
 2913:0135  A4                                   movsb
 2913:0136  E2 F5                                loop    locloop_3
 
-2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=0CDh)
+2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=64h)
 2913:013B  0E                                   push    cs
 2913:013C  1F                                   pop     ds
 2913:013D  24 1F                                and     al,1Fh
@@ -3882,7 +3883,7 @@
 2913:1DD7  90                                   nop
 2913:1DD8  4D                                   dec     bp
 2913:1DD9  79 82                                jns     loc_206
-2913:1DDB .BF 523E                              mov     di,var_198e             ; (2913:523E=0)
+2913:1DDB .BF 523E                              mov     di,base_bits_top        ; (2913:523E=0)
 2913:1DDE  B9 01F8                              mov     cx,1F8h
 2913:1DE1  48                                   dec     ax
 2913:1DE2  F3/ AA                               rep     stosb
@@ -3901,12 +3902,12 @@
 2913:1E02  0E                                   db       0Eh
 
                                 ;==========================================================================
-                                ;                          proc_28
+                                ;                          draw_enemy_base
                                 ;
                                 ;         Called from:   2913:2011, 2037
                                 ;==========================================================================
 
-2913:1E03                       proc_28         proc    near
+2913:1E03                       draw_enemy_base proc    near
 2913:1E03  B4 0B                                mov     ah,0Bh
 2913:1E05  E8 E4B9                              call    ega_map_mask            ; (02C1)
 2913:1E08  8A 9E 5220                           mov     bl,ss:base_cellx_e[bp]  ; (2913:5220=0)
@@ -3996,15 +3997,15 @@
 2913:1EB2  80 C3 15                             add     bl,15h
 2913:1EB5  53                                   push    bx
 2913:1EB6  56                                   push    si
-2913:1EB7  81 C6 523E                           add     si,523Eh
-2913:1EBB  E8 0031                              call    proc_29                 ; (1EEF)
+2913:1EB7 .81 C6 523E                           add     si,base_bits_top        ; (2913:523E=0)
+2913:1EBB  E8 0031                              call    draw_base_horiz         ; (1EEF)
 2913:1EBE  5E                                   pop     si
 2913:1EBF  5B                                   pop     bx
 2913:1EC0  80 C7 15                             add     bh,15h
 2913:1EC3  53                                   push    bx
 2913:1EC4  56                                   push    si
-2913:1EC5  81 C6 5292                           add     si,5292h
-2913:1EC9  E8 0023                              call    proc_29                 ; (1EEF)
+2913:1EC5 .81 C6 5292                           add     si,base_bits_btm        ; (2913:5292=0)
+2913:1EC9  E8 0023                              call    draw_base_horiz         ; (1EEF)
 2913:1ECC  5E                                   pop     si
 2913:1ECD  5B                                   pop     bx
 2913:1ECE  80 EF 15                             sub     bh,15h
@@ -4012,27 +4013,27 @@
 2913:1ED3  56                                   push    si
 2913:1ED4  80 C3 07                             add     bl,7
 2913:1ED7  53                                   push    bx
-2913:1ED8  81 C6 52E6                           add     si,52E6h
-2913:1EDC  E8 0084                              call    proc_30                 ; (1F63)
+2913:1ED8 .81 C6 52E6                           add     si,base_bits_rgt        ; (2913:52E6=0)
+2913:1EDC  E8 0084                              call    draw_base_vert          ; (1F63)
 2913:1EDF  5B                                   pop     bx
 2913:1EE0  5E                                   pop     si
 2913:1EE1  80 EB 15                             sub     bl,15h
-2913:1EE4  81 C6 538E                           add     si,538Eh
-2913:1EE8  E8 0078                              call    proc_30                 ; (1F63)
+2913:1EE4 .81 C6 538E                           add     si,base_bits_lft        ; (2913:538E=0)
+2913:1EE8  E8 0078                              call    draw_base_vert          ; (1F63)
 2913:1EEB                       loc_218:                                        ;  xref 2913:1EB0
 2913:1EEB  8B C5                                mov     ax,bp
 2913:1EED  5D                                   pop     bp
 2913:1EEE  C3                                   retn
-                                proc_28         endp
+                                draw_enemy_base endp
 
 
                                 ;==========================================================================
-                                ;                          proc_29
+                                ;                          draw_base_horiz
                                 ;
                                 ;         Called from:   2913:1EBB, 1EC9
                                 ;==========================================================================
 
-2913:1EEF                       proc_29         proc    near
+2913:1EEF                       draw_base_horiz proc    near
 2913:1EEF  B9 0007                              mov     cx,7
 
 2913:1EF2                       locloop_219:                                    ;  xref 2913:1F60
@@ -4099,16 +4100,16 @@
 2913:1F60  E2 90                                loop    locloop_219
 
 2913:1F62  C3                                   retn
-                                proc_29         endp
+                                draw_base_horiz endp
 
 
                                 ;==========================================================================
-                                ;                          proc_30
+                                ;                          draw_base_vert
                                 ;
                                 ;         Called from:   2913:1EDC, 1EE8
                                 ;==========================================================================
 
-2913:1F63                       proc_30         proc    near
+2913:1F63                       draw_base_vert  proc    near
 2913:1F63  B9 001C                              mov     cx,1Ch
 
 2913:1F66                       locloop_228:                                    ;  xref 2913:1FB8
@@ -4161,7 +4162,7 @@
 2913:1FB8  E2 AC                                loop    locloop_228
 
 2913:1FBA  C3                                   retn
-                                proc_30         endp
+                                draw_base_vert  endp
 
 2913:1FBB  06                   var_155         db      6                       ;  xref 2913:1E32
 2913:1FBC  0F 0F 06                             db       0Fh, 0Fh, 06h
@@ -4208,7 +4209,7 @@
 2913:200D                       loc_240:                                        ;  xref 2913:2005, 2009
 2913:200D  88 A6 5232                           mov     ss:arr_1e[bp],ah        ; (2913:5232=0)
 2913:2011                       loc_241:                                        ;  xref 2913:1FF7
-2913:2011  E8 FDEF                              call    proc_28                 ; (1E03)
+2913:2011  E8 FDEF                              call    draw_enemy_base         ; (1E03)
 2913:2014  84 E4                                test    ah,ah
 2913:2016  74 25                                jz      loc_244
 2913:2018  B4 01                                mov     ah,1
@@ -4224,7 +4225,7 @@
 2913:202C  80 BE 521A FF                        cmp     byte ptr ss:base_194e[bp],0FFh ; (2913:521A=0)
 2913:2031  74 0A                                je      loc_244
 2913:2033  FE 86 521A                           inc     byte ptr ss:base_194e[bp] ; (2913:521A=0)
-2913:2037  E8 FDC9                              call    proc_28                 ; (1E03)
+2913:2037  E8 FDC9                              call    draw_enemy_base         ; (1E03)
 2913:203A  E8 0004                              call    proc_32                 ; (2041)
 2913:203D                       loc_244:                                        ;  xref 2913:2016, 202A, 2031
 2913:203D  4D                                   dec     bp
@@ -4345,9 +4346,9 @@
 2913:2107  E2 E6                                loop    locloop_250
 
 2913:2109  B9 0006                              mov     cx,6
-2913:210C .BE 538E                              mov     si,var_204e             ; (2913:538E=0)
+2913:210C .BE 538E                              mov     si,base_bits_lft        ; (2913:538E=0)
 2913:210F  03 F3                                add     si,bx
-2913:2111 .BF 52E6                              mov     di,var_201e             ; (2913:52E6=0)
+2913:2111 .BF 52E6                              mov     di,base_bits_rgt        ; (2913:52E6=0)
 2913:2114  03 FB                                add     di,bx
 2913:2116  56                                   push    si
 2913:2117  57                                   push    di

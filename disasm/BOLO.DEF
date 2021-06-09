@@ -114,9 +114,9 @@ seg_a:1CB3   sub, c 1E          rnd8            Generate an 8-bit random value a
 seg_a:1CC7   sub, c 12          inc_fuel        Update the fuel level based on DL
 seg_a:1D17   sub                update_hisco    Update values of high score, level and density
 seg_a:1D5A   sub                gen_enemy_bases
-seg_a:1E03   sub                proc_28
-seg_a:1EEF   sub                proc_29
-seg_a:1F63   sub                proc_30
+seg_a:1E03   sub                draw_enemy_base
+seg_a:1EEF   sub                draw_base_horiz
+seg_a:1F63   sub                draw_base_vert
 seg_a:1FBF   sub                proc_31
 seg_a:2041   sub                proc_32
 seg_a:2089   sub                proc_33
@@ -460,6 +460,10 @@ seg_a:1E50   loc                                ; loc_214
 seg_a:1E5E   loc                                ; loc_215
 seg_a:1E71   loc                                ; loc_216
 seg_a:1E8C   loc                                ; loc_217
+seg_a:1EB7   forced, od seg_a
+seg_a:1EC5   forced, od seg_a
+seg_a:1ED8   forced, od seg_a
+seg_a:1EE4   forced, od seg_a
 seg_a:1EEB   loc                                ; loc_218
 seg_a:1EF2   loc                                ; locloop_219
 seg_a:1F06   loc                                ; loc_220
@@ -931,13 +935,14 @@ seg_a:2F68   db, r 20           rnd_state       Possibly the state of the random
 2913:522C    db, equ, index     base_cellfl_e
 2913:5232    db, equ, index     arr_1e
 2913:5238    db, equ, index     arr_2e
-2913:523E    db, equ, index     var_198e
+2913:523E    db, equ, index     base_bits_top
 2913:5240    db, equ, index     var_199e
+2913:5292    db, equ, index     base_bits_btm
 2913:529D    db, equ, index     var_200e
-2913:52E6    db, equ, index     var_201e
+2913:52E6    db, equ, index     base_bits_rgt
 2913:52EC    db, equ, index     var_202e
 2913:5300    db, equ, index     var_203e
-2913:538E    db, equ, index     var_204e
+2913:538E    db, equ, index     base_bits_lft
 2913:5394    db, equ, index     var_205e
 2913:53A8    db, equ, index     var_206e
 2913:5436    db, equ, index     var_207e

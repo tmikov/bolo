@@ -244,7 +244,16 @@ static uint8_t base_celly[NUM_BASES]; // 5226h
 static uint8_t base_cellfl[NUM_BASES]; // 522Ch
 static uint8_t arr_1e[6]; // 5232h
 static uint8_t arr_2e[6]; // 5238h
-static uint8_t var_198e[504]; // 523Eh
+
+typedef struct {
+} UNK;
+
+// These arrays contain the images of the bases, updated as bases get
+// damaged.
+static uint16_t base_bits_top[NUM_BASES][7]; // [523Eh..5292h)
+static uint16_t base_bits_bottom[NUM_BASES][7]; // [5292h..52E6h)
+static uint8_t base_bits_right[NUM_BASES][28]; // [52E6h..538Eh)
+static uint8_t base_bits_left[NUM_BASES][28]; // [538Eh..5436h)
 
 uint8_t var_207e[81]; // *(2913:5436=0)
 // static struct {
@@ -354,6 +363,10 @@ static uint8_t rnd8(uint8_t mask);
 static void inc_fuel(uint8_t dl);
 static void update_hisco(void);
 static void gen_enemy_bases(void);
+static uint8_t draw_enemy_base(unsigned vidSeg, unsigned baseIndex);
+static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBits);
+static uint8_t draw_base_vert(unsigned vidSeg, int x, int y, uint8_t *pBaseBits);
+static void proc_31(unsigned vidSeg);
 static void proc_37(int8_t dl_x, int8_t dh_y);
 static uint8_t *alist_xy(int8_t x, int8_t y);
 static void add_actor(unsigned actor, int8_t cellX, int8_t cellY);
@@ -678,7 +691,7 @@ static AsyncResult async_start(void) {
     proc_17();
     draw_maze(0);
     do_explosions(0);
-    // proc_31();
+    proc_31(0);
     draw_enemies(0);
     if (coll_flags1[0] == 0)
       draw_ship(0);
@@ -2525,7 +2538,177 @@ static void gen_enemy_bases(void) {
     arr_1e[baseIndex] = 28;
   } while (--baseIndex >= 0);
 
-  memset(var_198e, 0xFF, sizeof(var_198e));
+  memset(base_bits_top, 0xFF, sizeof(base_bits_top));
+  memset(base_bits_bottom, 0xFF, sizeof(base_bits_bottom));
+  memset(base_bits_right, 0xFF, sizeof(base_bits_right));
+  memset(base_bits_left, 0xFF, sizeof(base_bits_left));
+}
+
+/// 2913:1E03                       proc_28         proc    near
+static uint8_t /*ah*/ draw_enemy_base(unsigned vidSeg, unsigned baseIndex) {
+  ega_map_mask(EGAHighCyan);
+  XYFlag xyf = rel_coords(base_cellx[baseIndex], base_celly[baseIndex], 20, 20);
+  if (!xyf.success)
+    return 0;
+  int x = xyf.x;
+  int y = xyf.y;
+
+  // FIXME: should this be "bh_y < MAZE_SCREEN_H"
+  if ((base_194e[baseIndex] & 0x81) == 0 && (x >= -4 && x < MAZE_SCREEN_W) &&
+      (y >= -4 && y < MAZE_SCREEN_H + 17)) {
+    x += 4;
+
+    static const uint8_t base_center_bmp1x4[4] = {6, 0xF, 0xF, 6};
+
+    uint8_t collision = 0;
+
+    for (int i = 0; i != 4; ++y, ++i) {
+      if (y < 0 || y > MAZE_SCREEN_H)
+        continue;
+
+      unsigned bits = base_center_bmp1x4[i];
+
+      unsigned vidOfs = vidSeg + vid_offset(x, y);
+      uint8_t vidMask = vid_mask(x);
+
+      while (vidMask >>= 1)
+        bits <<= 1;
+
+      if (x >= 0 && x < MAZE_SCREEN_W) {
+        collision |= ega_read(vidOfs) & (uint8_t)bits;
+        ega_write(vidOfs, (uint8_t)bits, EGAHighCyan);
+      }
+
+      --vidOfs;
+      if (x >= 8 && x < MAZE_SCREEN_W + 8) {
+        collision |= ega_read(vidOfs) & (uint8_t)(bits >> 8);
+        ega_write(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
+      }
+    }
+
+    if (collision) {
+      base_194e[baseIndex] = 0xE6;
+      inc_fuel(4);
+      draw_radar();
+      proc_37(ship_cellx[0], ship_celly[0]);
+    }
+  }
+
+  ega_map_mask(EGAHighCyan);
+
+  xyf = rel_coords(base_cellx[baseIndex], base_celly[baseIndex], 8, 8);
+  if (!xyf.success)
+    return false;
+
+  uint8_t collisions = 0;
+  x = xyf.x + 21;
+  y = xyf.y;
+
+  collisions |= draw_base_horiz(vidSeg, x, y, base_bits_top[baseIndex]);
+  y += 21;
+  collisions |= draw_base_horiz(vidSeg, x, y, base_bits_bottom[baseIndex]);
+  y -= 21;
+  x += 7;
+  collisions |= draw_base_vert(vidSeg, x, y, base_bits_right[baseIndex]);
+  x -= 21;
+  collisions |= draw_base_vert(vidSeg, x, y, base_bits_left[baseIndex]);
+
+  return collisions;
+}
+
+/// Returns collision bits.
+/// 2913:1EEF                       proc_29         proc    near
+static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBits) {
+  uint8_t collisions = 0;
+
+  for (int i = 0; i < 7; ++pBaseBits, ++y, ++i) {
+    if (y < 0 || y > MAZE_SCREEN_H)
+      continue;
+
+    unsigned vidOfs = vidSeg + vid_offset(x, y);
+    uint8_t vidMask = vid_mask(x);
+
+    uint32_t bits = (*pBaseBits & 0x3FFF);
+    for (uint8_t tmp = vidMask; tmp >>= 1;)
+      bits <<= 1;
+
+    if (x >= 0 && x < MAZE_SCREEN_W) {
+      uint8_t vidBits = ega_read(vidOfs);
+      ega_or(vidOfs, (uint8_t)bits, EGAHighCyan);
+      collisions |= vidBits & (uint8_t)bits;
+      bits ^= vidBits;
+    }
+
+    --vidOfs;
+    if (x >= 8 && x < MAZE_SCREEN_W + 8) {
+      uint8_t vidBits = ega_read(vidOfs);
+      ega_or(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
+      collisions |= vidBits & (uint8_t)(bits >> 8);
+      bits ^= (uint32_t)vidBits << 8;
+    }
+
+    --vidOfs;
+    if (x >= 16 && x < MAZE_SCREEN_W + 16) {
+      uint8_t vidBits = ega_read(vidOfs);
+      ega_or(vidOfs, (uint8_t)(bits >> 16), EGAHighCyan);
+      collisions |= vidBits & (uint8_t)(bits >> 16);
+      bits ^= (uint32_t)vidBits << 16;
+    }
+
+    while (vidMask >>= 1)
+      bits >>= 1;
+
+    *pBaseBits = (uint16_t)bits;
+  }
+
+  return collisions;
+}
+
+/// \return collisions
+/// 2913:1F63                       proc_30         proc    near
+static uint8_t draw_base_vert(unsigned vidSeg, int x, int y, uint8_t *pBaseBits) {
+  uint8_t collisions = 0;
+
+  for (int i = 0; i < 28; ++pBaseBits, ++y, ++i) {
+    if (y < 0 || y > MAZE_SCREEN_H)
+      continue;
+
+    unsigned vidOfs = vidSeg + vid_offset(x, y);
+    uint8_t vidMask = vid_mask(x);
+
+    unsigned bits = *pBaseBits & 0x7F;
+    for (uint8_t tmp = vidMask; tmp >>= 1;)
+      bits <<= 1;
+
+    if (x >= 0 && x < MAZE_SCREEN_W) {
+      uint8_t vidBits = ega_read(vidOfs);
+      ega_or(vidOfs, (uint8_t)bits, EGAHighCyan);
+      collisions |= vidBits & (uint8_t)bits;
+      bits ^= vidBits;
+    }
+
+    --vidOfs;
+    if (x >= 8 && x < MAZE_SCREEN_W + 8) {
+      uint8_t vidBits = ega_read(vidOfs);
+      ega_or(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
+      collisions |= vidBits & (uint8_t)(bits >> 8);
+      bits ^= vidBits << 8;
+    }
+
+    while (vidMask >>= 1)
+      bits >>= 1;
+
+    *pBaseBits = (uint8_t)bits;
+  }
+
+  return collisions;
+}
+
+/// 2913:1FBF                       proc_31         proc    near
+static void proc_31(unsigned vidSeg) {
+  // FIXME: rest of the routine.
+  for (unsigned i = 0; i != NUM_BASES; ++i)
+    draw_enemy_base(vidSeg, i);
 }
 
 /// Defines wall flags for a 9x9 area cell box.
