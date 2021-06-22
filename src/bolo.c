@@ -1941,9 +1941,11 @@ static void adjust_bullets(void) {
   do {
     if (bullet_flags[i] & 0x80)
       continue;
-    if (in_screen(bullet_x[i], bullet_y[i])) {
-      bullet_x[i] -= step.x;
-      bullet_y[i] -= step.y;
+    uint8_t x = bullet_x[i] - step.x;
+    uint8_t y = bullet_y[i] - step.y;
+    if (in_screen(x, y)) {
+      bullet_x[i] = x;
+      bullet_y[i] = y;
     } else {
       bullet_flags[i] = 0xFF;
     }
