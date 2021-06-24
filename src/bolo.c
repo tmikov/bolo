@@ -224,9 +224,9 @@ static uint8_t gun_angle; // 5177h
 /// It is either 0 or 4 (when moving backwards).
 static uint8_t vel_angle; // 5178h
 /// Bullet x-coordinate, screen-relative.
-static uint8_t bullet_x[NUM_ACTORS32]; // 5179h
-/// Bullet 8-coordinate, screen-relative.
-static uint8_t bullet_y[NUM_ACTORS32]; // 5199h
+static int16_t bullet_x[NUM_ACTORS32]; // 5179h
+/// Bullet y-coordinate, screen-relative.
+static int16_t bullet_y[NUM_ACTORS32]; // 5199h
 /// Bullet flags.
 /// 0xFF (or likely 0x80) if out of screen.
 /// 0x06 if collision.
@@ -329,17 +329,10 @@ static void shoot_bullet(unsigned actor);
 static inline bool in_screen(int x, int y);
 
 typedef struct XYFlag {
-  /// The "signedness" of the resulting 8-bit values is tricky. They are declared
-  /// as unsigned, but their real values are in the following ranges:
   /// x = [-48..255]
+  int16_t x /*bl*/;
   /// y = [-60..255]
-  /// Obviously there is overlap. I believe the overlap is resolved by relying
-  /// on the screen size 208x191. Values above 208 and 191 respectively are
-  /// outside of the screen, regardless whether they are negative or positive.
-  /// TODO: we should return 16-bit (or more integers) and eliminate all this
-  /// confusion (which was necessary on Apple II).
-  uint8_t x /*bl*/;
-  uint8_t y /*bh*/;
+  int16_t y /*bh*/;
   /// true if the result is valid.
   bool success /*!cf*/;
 } XYFlag;
@@ -1891,6 +1884,8 @@ static void update_bullets(unsigned seg) {
 
     int x = bullet_x[i];
     int y = bullet_y[i];
+    // adjust_bullets() must have ensured that the bullets are in screen.
+    assert(x >= 0 && x < MAZE_SCREEN_W && y >= 0 && y < MAZE_SCREEN_H);
 
     // Check the bullet for collision and in-screen 12 steps ahead.
     int curX = x;
@@ -1944,8 +1939,8 @@ static void adjust_bullets(void) {
     int x = bullet_x[i] - step.x;
     int y = bullet_y[i] - step.y;
     if (in_screen(x, y)) {
-      bullet_x[i] = x;
-      bullet_y[i] = y;
+      bullet_x[i] = (int16_t)x;
+      bullet_y[i] = (int16_t)y;
     } else {
       bullet_flags[i] = 0xFF;
     }
@@ -1958,8 +1953,8 @@ static void adjust_bullets(void) {
 static void shoot_bullet(unsigned actor) {
   XYFlag xyf = rel_coords(ship_cellx[actor], ship_celly[actor], ship_ofsx[actor], ship_ofsy[actor]);
   if (xyf.success) {
-    uint8_t x = xyf.x;
-    uint8_t y = xyf.y;
+    int x = xyf.x;
+    int y = xyf.y;
     // Look for an available bullet spot.
     int i = NUM_ACTORS32 - 2;
     do {
@@ -1986,8 +1981,8 @@ static void shoot_bullet(unsigned actor) {
     };
     x += bullet_start[angle][0];
     y += bullet_start[angle][1];
-    bullet_x[i] = x;
-    bullet_y[i] = y;
+    bullet_x[i] = (int16_t)x;
+    bullet_y[i] = (int16_t)y;
   }
   playBoloSound(32, 30);
 }
@@ -2003,22 +1998,15 @@ static inline bool in_screen(int x, int y) {
 /// approximately fit in the screen. Return the screen-relative coordinates and
 /// flag=true on success, -1,-1, false if the coordinates don't fit.
 ///
-/// The "signedness" of the resulting 8-bit values is tricky. They are declared
-/// as unsigned, but their real values are in the following ranges:
 /// x = [-48..255]
 /// y = [-60..255]
-/// Obviously there is overlap. I believe the overlap is resolved by relying
-/// on the screen size 208x191. Values above 208 and 191 respectively are
-/// outside of the screen, regardless whether they are negative or positive.
-/// TODO: we should return 16-bit (or more integers) and eliminate all this
-/// confusion (which was necessary on Apple II).
 ///
 /// 2913:1770                       proc_20          proc    near
 static XYFlag
 rel_coords(uint8_t cellX /*bl*/, uint8_t cellY /*bh*/, uint8_t ofsX /*dl*/, uint8_t ofsY /*dh*/) {
   // ship_cellx[0] - 3 is "start of screen" cell.
   // x is distance of the ship from start of screen.
-  int8_t relCellX = cellX - (ship_cellx[0] - 3);
+  int relCellX = cellX - (ship_cellx[0] - 3);
   // At most 7 cells are visible horizontally.
   if (relCellX >= 0 && relCellX < 7) {
     // The original logic looks like this:
@@ -2054,15 +2042,15 @@ rel_coords(uint8_t cellX /*bl*/, uint8_t cellY /*bh*/, uint8_t ofsX /*dl*/, uint
     //   x > 127 && x < 256 || x < 152
     // or simply:
     //   x < 256
-    unsigned x = ofsX + relCellX * CELL_SIZE;
+    int x = ofsX + relCellX * CELL_SIZE;
     if (x < 256) {
       x -= ship_ofsx[0] + 10;
 
-      int8_t relCellY = cellY - (ship_celly[0] - 3);
+      int relCellY = cellY - (ship_celly[0] - 3);
       if (relCellY >= 0 && relCellY < 7) {
-        unsigned y = ofsY + relCellY * CELL_SIZE;
+        int y = ofsY + relCellY * CELL_SIZE;
         y -= ship_ofsy[0] + 22;
-        return (XYFlag){.x = x, .y = y, .success = true};
+        return (XYFlag){.x = (int16_t)x, .y = (int16_t)y, .success = true};
       }
     }
   }
@@ -2239,14 +2227,16 @@ static void explode_bullets(unsigned vidSeg) {
     if (flags < 2)
       continue;
 
-    int y = bullet_y[actor] + 7;
-    if (y > MAZE_SCREEN_H + 7)
+    int y = bullet_y[actor];
+    // FIXME: should this be >= MAZE_SCREEN_H?
+    if (y < -7 || y > MAZE_SCREEN_H)
       continue;
+    y -= 3;
 
-    y -= 10;
-    int x = bullet_x[actor] + 3;
-    if (x > MAZE_SCREEN_W + 2)
+    int x = bullet_x[actor];
+    if (x < -3 || x >= MAZE_SCREEN_W)
       continue;
+    x += 3;
 
     const uint8_t *bmpPtr = bullet_explosions_1x7[flags - 2];
 
@@ -2788,13 +2778,14 @@ static void draw_enemies(unsigned vidSeg) {
     if (!xyf.success)
       continue;
 
-    uint8_t x = xyf.x;
-    uint8_t y = xyf.y;
+    int x = xyf.x;
+    int y = xyf.y;
 
-    x += 7;
-    if (x >= MAZE_SCREEN_W + 7)
+    if (x < -7 || x >= MAZE_SCREEN_W)
       continue;
-    if (y + 7 >= MAZE_SCREEN_H + 8)
+    x += 7;
+    // FIXME: shouldn't this be y >= MAZE_SCREEN_H
+    if (y < -7 || y > MAZE_SCREEN_H)
       continue;
     const uint8_t *bmpPtr = sprites_1x7 + (sprite_index[ship_kind[actor]] + ship_angle[actor]) * 7;
 
@@ -2803,14 +2794,14 @@ static void draw_enemies(unsigned vidSeg) {
     unsigned count = 7;
     do {
       unsigned bits = *bmpPtr++;
-      if (y > MAZE_SCREEN_H)
+      if (y < 0 || y > MAZE_SCREEN_H)
         continue;
       unsigned vidOfs = vid_offset(x, y) + vidSeg;
       uint8_t vidMask = vid_mask(x);
       while (vidMask >>= 1)
         bits <<= 1;
 
-      if (x < MAZE_SCREEN_W) {
+      if (x >= 0 && x < MAZE_SCREEN_W) {
         collision |= ega_read(vidOfs) & (uint8_t)bits;
         ega_or(vidOfs, (uint8_t)bits, EGAHighGreen);
       }
