@@ -1,4 +1,4 @@
-            BOLO.LST                                            Sourcer v8.01  24-Jun-2021 10:48 pm   Page 1
+            BOLO.LST                                            Sourcer v8.01  29-Jun-2021 10:55 am   Page 1
 
 
                                 PAGE  59,132
@@ -19,7 +19,7 @@
 
      = 0020                     var_1e          equ     20h                     ; (0000:0020=0A5h)
      = 00CA                     var_2e          equ     0CAh                    ; (0000:00CA=0)
-     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=0D064h)
+     = 046C                     timer_low_      equ     46Ch                    ; (0000:046C=0EBB9h)
      = 0487                     video_options_  equ     487h                    ; (0000:0487=60h)
      = 5487                     var_3e          equ     5487h                   ;*(0200:5487=74h)
      = 0005                     var_4e          equ     5                       ; (2913:0005=0)
@@ -130,12 +130,12 @@
 2913:012D                       locloop_3:                                      ;  xref 2913:0136
 2913:012D  F6 C1 03                             test    cl,3
 2913:0130  75 03                                jnz     loc_4
-2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=64h)
+2913:0132 .BE 046C                              mov     si,timer_low_           ; (0000:046C=0B9h)
 2913:0135                       loc_4:                                          ;  xref 2913:0130
 2913:0135  A4                                   movsb
 2913:0136  E2 F5                                loop    locloop_3
 
-2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=64h)
+2913:0138  A0 046C                              mov     al,ds:timer_low_        ; (0000:046C=0B9h)
 2913:013B  0E                                   push    cs
 2913:013C  1F                                   pop     ds
 2913:013D  24 1F                                and     al,1Fh
@@ -2691,7 +2691,7 @@
 2913:14AB  EB 77                                jmp     short loc_120           ; (1524)
 2913:14AD  90                                   db      90h
 2913:14AE                       loc_117:                                        ;  xref 2913:1495
-2913:14AE  E8 007A                              call    proc_18                 ; (152B)
+2913:14AE  E8 007A                              call    is_actor_close          ; (152B)
 2913:14B1  73 F8                                jnc     loc_116
 2913:14B3 .BB 15CD                              mov     bx,offset var_137       ; (2913:15CD='*(((&&&&&')
 2913:14B6  8A 85 5097                           mov     al,ds:ship_kind_e[di]   ; (2913:5097=0)
@@ -2750,12 +2750,12 @@
 
 
                                 ;==========================================================================
-                                ;                          proc_18
+                                ;                          is_actor_close
                                 ;
                                 ;         Called from:   2913:14AE
                                 ;==========================================================================
 
-2913:152B                       proc_18         proc    near
+2913:152B                       is_actor_close  proc    near
 2913:152B  8A 85 4F9B                           mov     al,ds:ship_cellx[di]    ; (2913:4F9B=0)
 2913:152F  2A 06 4F9B                           sub     al,ds:ship_cellx        ; (2913:4F9B=0)
 2913:1533  04 03                                add     al,3
@@ -2859,7 +2859,7 @@
                                                                                 ;            15BB, 15BD, 15BF
 2913:15A7  F9                                   stc
 2913:15A8  C3                                   retn
-                                proc_18         endp
+                                is_actor_close  endp
 
 2913:15A9  155D                 var_122         dw      offset loc_122          ; Data table (indexed access)
                                                                                 ;  xref 2913:1559
@@ -2888,18 +2888,16 @@
 2913:15E5  1E 1E 1E 1E 1E 1C                    db       1Eh, 1Eh, 1Eh, 1Eh, 1Eh, 1Ch
 2913:15EB  1C 1C 1C 1C 1A 1A                    db       1Ch, 1Ch, 1Ch, 1Ch, 1Ah, 1Ah
 2913:15F1  1A                                   db       1Ah
-2913:15F2  08                   var_138         db      8                       ; Data table (indexed access)
+2913:15F2  08 08 00 10 00 20    var_138         db       08h, 08h, 00h, 10h, 00h, 20h ; Data table (indexed access)
                                                                                 ;  xref 2913:14F1
-2913:15F3  08 00 10 00 20 20                    db       08h, 00h, 10h, 00h, 20h, 20h
-2913:15F9  08 08 08 10 20 20                    db       08h, 08h, 08h, 10h, 20h, 20h
-2913:15FF  20 00 08 08 38 20                    db       20h, 00h, 08h, 08h, 38h, 20h
-2913:1605  20 00 04 04 0E FF                    db       20h, 00h, 04h, 04h, 0Eh,0FFh
-2913:160B  E0                                   db      0E0h
-2913:160C  40                   var_139         db      40h
-2913:160D  40 00 02 02 83 80                    db       40h, 00h, 02h, 02h, 83h, 80h
-2913:1613  80 00 02 02 02 01                    db       80h, 00h, 02h, 02h, 02h, 01h
-2913:1619  80 80 80 02 02 00                    db       80h, 80h, 80h, 02h, 02h, 00h
-2913:161F  01 00 80 80                          db       01h, 00h, 80h, 80h
+2913:15F8  20 08 08 08 10 20                    db       20h, 08h, 08h, 08h, 10h, 20h
+2913:15FE  20 20 00 08 08 38                    db       20h, 20h, 00h, 08h, 08h, 38h
+2913:1604  20 20 00 04 04 0E                    db       20h, 20h, 00h, 04h, 04h, 0Eh
+2913:160A  FF E0 40 40 00 02                    db      0FFh,0E0h, 40h, 40h, 00h, 02h
+2913:1610  02 83 80 80 00 02                    db       02h, 83h, 80h, 80h, 00h, 02h
+2913:1616  02 02 01 80 80 80                    db       02h, 02h, 01h, 80h, 80h, 80h
+2913:161C  02 02 00 01 00 80                    db       02h, 02h, 00h, 01h, 00h, 80h
+2913:1622  80                                   db       80h
 
                                 ;==========================================================================
                                 ;                               update_bullets
@@ -4191,9 +4189,9 @@
 2913:1FDE  E8 0EF0                              call    rnd_update              ; (2ED1)
 2913:1FE1  75 07                                jnz     loc_239
 2913:1FE3  FE 86 521A                           inc     byte ptr ss:base_194e[bp] ; (2913:521A=0)
-2913:1FE7  E8 038F                              call    proc_41                 ; (2379)
+2913:1FE7  E8 038F                              call    spawn_enemy             ; (2379)
 2913:1FEA                       loc_239:                                        ;  xref 2913:1FD8, 1FE1
-2913:1FEA  E8 009C                              call    proc_33                 ; (2089)
+2913:1FEA  E8 009C                              call    regenerate_base         ; (2089)
 2913:1FED  FE 86 5238                           inc     byte ptr ss:arr_2e[bp]  ; (2913:5238=0)
 2913:1FF1  8A 86 5238                           mov     al,ss:arr_2e[bp]        ; (2913:5238=0)
 2913:1FF5  3C 40                                cmp     al,40h                  ; '@'
@@ -4274,12 +4272,12 @@
 
 
                                 ;==========================================================================
-                                ;                          proc_33
+                                ;                          regenerate_base
                                 ;
                                 ;         Called from:   2913:1FEA
                                 ;==========================================================================
 
-2913:2089                       proc_33         proc    near
+2913:2089                       regenerate_base proc    near
 2913:2089  80 3E 4F9A 28                        cmp     byte ptr ds:var_186e,28h ; (2913:4F9A=0) '('
 2913:208E  74 03                                je      loc_247
 2913:2090  E9 00C4                              jmp     loc_ret_254             ; (2157)
@@ -4396,7 +4394,7 @@
 
 2913:2157                       loc_ret_254:                                    ;  xref 2913:2090
 2913:2157  C3                                   retn
-                                proc_33         endp
+                                regenerate_base endp
 
 
                                 ;==========================================================================
@@ -4721,12 +4719,12 @@
 
 
                                 ;==========================================================================
-                                ;                          proc_41
+                                ;                          spawn_enemy
                                 ;
                                 ;         Called from:   2913:1FE7
                                 ;==========================================================================
 
-2913:2379                       proc_41         proc    near
+2913:2379                       spawn_enemy     proc    near
 2913:2379  8B FD                                mov     di,bp
 2913:237B .BE 0020                              mov     si,var_9e               ; (2913:0020=0)
 2913:237E  33 DB                                xor     bx,bx
@@ -4791,7 +4789,7 @@
 2913:2406  32 FF                                xor     bh,bh
 2913:2408  53                                   push    bx
 2913:2409  D1 E3                                shl     bx,1
-2913:240B  8B 9F 245C                           mov     bx,var_160[bx]          ; (2913:245C=246Eh)
+2913:240B  8B 9F 245C                           mov     bx,word ptr var_160[bx] ; (2913:245C=246Eh)
 2913:240F  B0 40                                mov     al,40h                  ; '@'
 2913:2411  E8 0ABD                              call    rnd_update              ; (2ED1)
 2913:2414                       loc_278:                                        ;  xref 2913:241B
@@ -4822,37 +4820,39 @@
 2913:244F  C6 84 506D 03                        mov     byte ptr ds:var_188e[si],3 ; (2913:506D=0)
 2913:2454  90                                   nop
 2913:2455  E9 FF59                              jmp     loc_272                 ; (23B1)
-                                proc_41         endp
+                                spawn_enemy     endp
 
 2913:2458  02                   var_159         db      2                       ; Data table (indexed access)
                                                                                 ;  xref 2913:243B
 2913:2459  04 08 01                             db      4, 8, 1
-2913:245C  246E                 var_160         dw      246Eh                   ; Data table (indexed access)
+2913:245C  246E                 var_160         dw      offset arr_3            ; Data table (indexed access)
                                                                                 ;  xref 2913:240B
-2913:245E  6F 24                                db      'o$'
-2913:2460  72 24                                db      'r$'
-2913:2462  72 24                                db      'r$'
-2913:2464  72 24                                db      'r$'
-2913:2466  72 24                                db      'r$'
-2913:2468  72 24                                db      'r$'
-2913:246A  72 24                                db      'r$'
-2913:246C  77 24                                db      'w$'
-2913:246E  40                                   db      '@'
-2913:246F  16 2B 40 08 18 28                    db       16h, 2Bh, 40h, 08h, 18h, 28h
-2913:2475  38 40 18                             db       38h, 40h, 18h
+2913:245E  246F                                 dw      offset arr_4
+2913:2460  2472                                 dw      offset arr_5
+2913:2462  2472                                 dw      offset arr_5
+2913:2464  2472                                 dw      offset arr_5
+2913:2466  2472                                 dw      offset arr_5
+2913:2468  2472                                 dw      offset arr_5
+2913:246A  2472                                 dw      offset arr_5
+2913:246C  2477                                 dw      offset arr_6
+2913:246E  40                   arr_3           db      40h                     ;  xref 2913:245C
+2913:246F  16                   arr_4           db      16h                     ;  xref 2913:245E
+2913:2470  2B 40                                db       2Bh, 40h
+2913:2472  08                   arr_5           db      8                       ;  xref 2913:2460, 2462, 2464, 2466
+                                                                                ;            2468, 246A
+2913:2473  18 28 38 40                          db       18h, 28h, 38h, 40h
+2913:2477  18                   arr_6           db      18h                     ;  xref 2913:246C
 2913:2478  30 40                                db       30h, 40h
-2913:247A  00                   var_161         db      0                       ; Data table (indexed access)
+2913:247A  00 01 04 09 0E 13    var_161         db       00h, 01h, 04h, 09h, 0Eh, 13h ; Data table (indexed access)
                                                                                 ;  xref 2913:241E
-2913:247B  01 04 09 0E 13 18                    db       01h, 04h, 09h, 0Eh, 13h, 18h
-2913:2481  1D                                   db       1Dh
-2913:2482  22                                   db      22h
-2913:2483  01                   var_162         db      1                       ; Data table (indexed access)
+2913:2480  18 1D 22                             db       18h, 1Dh, 22h
+2913:2483  01 01 02 01 01 02    var_162         db      1, 1, 2, 1, 1, 2        ; Data table (indexed access)
                                                                                 ;  xref 2913:2428
-2913:2484  01 02 01 01 02 01                    db      1, 2, 1, 1, 2, 1
-2913:248A  03 02 02 01 03 02                    db      3, 2, 2, 1, 3, 2
-2913:2490  04 01 03 02 04 03                    db      4, 1, 3, 2, 4, 3
-2913:2496  03 02 04 03 05 02                    db      3, 2, 4, 3, 5, 2
-2913:249C  04 03 05 04 04 03                    db      4, 3, 5, 4, 4, 3
+2913:2489  01 03 02 02 01 03                    db      1, 3, 2, 2, 1, 3
+2913:248F  02 04 01 03 02 04                    db      2, 4, 1, 3, 2, 4
+2913:2495  03 03 02 04 03 05                    db      3, 3, 2, 4, 3, 5
+2913:249B  02 04 03 05 04 04                    db      2, 4, 3, 5, 4, 4
+2913:24A1  03                                   db      3
 2913:24A2  05 04 05 05 04 05                    db      5, 4, 5, 5, 4, 5
 2913:24A8  00 00 00 18 00 00    sprite_index    db       00h, 00h, 00h, 18h, 00h, 00h ; (Index of each sprite (in 8 directio
                                                                                 ; ns) in sprites_1x7) / 7
@@ -5398,7 +5398,7 @@
                                 ;==========================================================================
 
 2913:2980                       proc_46         proc    near
-2913:2980  E8 0259                              call    proc_55                 ; (2BDC)
+2913:2980  E8 0259                              call    check_up                ; (2BDC)
 2913:2983  75 0F                                jnz     loc_332
 2913:2985  8A 9C 4FEF                           mov     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:2989  80 FB 04                             cmp     bl,4
@@ -5406,21 +5406,21 @@
 2913:298E  F6 45 BF 8C                          test    byte ptr [di-41h],8Ch
 2913:2992  74 0E                                jz      loc_334
 2913:2994                       loc_332:                                        ;  xref 2913:2983, 29A0
-2913:2994  E9 0088                              jmp     loc_347                 ; (2A1F)
+2913:2994  E9 0088                              jmp     ret_ofsy_m_6            ; (2A1F)
 2913:2997                       loc_333:                                        ;  xref 2913:298C
 2913:2997  80 FB 21                             cmp     bl,21h                  ; '!'
 2913:299A  72 06                                jb      loc_334
 2913:299C  F6 45 C1 89                          test    byte ptr [di-3Fh],89h
 2913:29A0  75 F2                                jnz     loc_332
 2913:29A2                       loc_334:                                        ;  xref 2913:2992, 299A
-2913:29A2  E9 009C                              jmp     loc_351                 ; (2A41)
+2913:29A2  E9 009C                              jmp     ret_31_p_ofsy           ; (2A41)
 
                                 ;==== External Entry into Subroutine ======================================
                                 ;
                                 ;         Called from:   2913:2968, 2974
 
 2913:29A5                       proc_47:
-2913:29A5  E8 022C                              call    proc_54                 ; (2BD4)
+2913:29A5  E8 022C                              call    check_right             ; (2BD4)
 2913:29A8  75 0F                                jnz     loc_335
 2913:29AA  8A 9C 5019                           mov     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:29AE  80 FB 05                             cmp     bl,5
@@ -5428,7 +5428,7 @@
 2913:29B3  F6 45 C1 89                          test    byte ptr [di-3Fh],89h
 2913:29B7  74 0E                                jz      loc_337
 2913:29B9                       loc_335:                                        ;  xref 2913:29A8, 29C5
-2913:29B9  EB 59                                jmp     short loc_344           ; (2A14)
+2913:29B9  EB 59                                jmp     short ret_31_m_ofsx     ; (2A14)
 2913:29BB  90                                   db      90h
 2913:29BC                       loc_336:                                        ;  xref 2913:29B1
 2913:29BC  80 FB 22                             cmp     bl,22h                  ; '"'
@@ -5436,7 +5436,7 @@
 2913:29C1  F6 45 41 83                          test    byte ptr [di+41h],83h
 2913:29C5  75 F2                                jnz     loc_335
 2913:29C7                       loc_337:                                        ;  xref 2913:29B7, 29BF
-2913:29C7  EB 71                                jmp     short loc_350           ; (2A3A)
+2913:29C7  EB 71                                jmp     short ret_68_m_ofsx     ; (2A3A)
 2913:29C9  90                                   db      90h
 
                                 ;==== External Entry into Subroutine ======================================
@@ -5444,7 +5444,7 @@
                                 ;         Called from:   2913:2968, 2978
 
 2913:29CA                       proc_48:
-2913:29CA  E8 0217                              call    proc_56                 ; (2BE4)
+2913:29CA  E8 0217                              call    check_down              ; (2BE4)
 2913:29CD  75 0F                                jnz     loc_338
 2913:29CF  8A 9C 4FEF                           mov     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:29D3  80 FB 04                             cmp     bl,4
@@ -5452,7 +5452,7 @@
 2913:29D8  F6 45 3F 86                          test    byte ptr [di+3Fh],86h
 2913:29DC  74 0E                                jz      loc_340
 2913:29DE                       loc_338:                                        ;  xref 2913:29CD, 29EA
-2913:29DE  EB 48                                jmp     short loc_348           ; (2A28)
+2913:29DE  EB 48                                jmp     short ret_32_m_ofsy     ; (2A28)
 2913:29E0  90                                   db      90h
 2913:29E1                       loc_339:                                        ;  xref 2913:29D6
 2913:29E1  80 FB 21                             cmp     bl,21h                  ; '!'
@@ -5460,7 +5460,7 @@
 2913:29E6  F6 45 41 83                          test    byte ptr [di+41h],83h
 2913:29EA  75 F2                                jnz     loc_338
 2913:29EC                       loc_340:                                        ;  xref 2913:29DC, 29E4
-2913:29EC  EB 5A                                jmp     short loc_352           ; (2A48)
+2913:29EC  EB 5A                                jmp     short ret_69_m_ofsy     ; (2A48)
 2913:29EE  90                                   db      90h
 
                                 ;==== External Entry into Subroutine ======================================
@@ -5468,7 +5468,7 @@
                                 ;         Called from:   2913:2968, 297C
 
 2913:29EF                       proc_49:
-2913:29EF  E8 01FA                              call    proc_57                 ; (2BEC)
+2913:29EF  E8 01FA                              call    check_left              ; (2BEC)
 2913:29F2  75 0F                                jnz     loc_341
 2913:29F4  8A 9C 5019                           mov     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:29F8  80 FB 05                             cmp     bl,5
@@ -5476,7 +5476,7 @@
 2913:29FD  F6 45 BF 8C                          test    byte ptr [di-41h],8Ch
 2913:2A01  74 0E                                jz      loc_343
 2913:2A03                       loc_341:                                        ;  xref 2913:29F2, 2A0F
-2913:2A03  EB 2C                                jmp     short loc_349           ; (2A31)
+2913:2A03  EB 2C                                jmp     short ret_ofsx_m_6      ; (2A31)
 2913:2A05  90                                   db      90h
 2913:2A06                       loc_342:                                        ;  xref 2913:29FB
 2913:2A06  80 FB 22                             cmp     bl,22h                  ; '"'
@@ -5484,45 +5484,45 @@
 2913:2A0B  F6 45 3F 86                          test    byte ptr [di+3Fh],86h
 2913:2A0F  75 F2                                jnz     loc_341
 2913:2A11                       loc_343:                                        ;  xref 2913:2A01, 2A09
-2913:2A11  EB 3C                                jmp     short loc_353           ; (2A4F)
+2913:2A11  EB 3C                                jmp     short ret_30_p_ofsx     ; (2A4F)
 2913:2A13  90                                   db      90h
-2913:2A14                       loc_344:                                        ;  xref 2913:29B9, 2A89, 2AE8
+2913:2A14                       ret_31_m_ofsx:                                  ;  xref 2913:29B9, 2A89, 2AE8
 2913:2A14 ,B0 1F                                mov     al,1Fh
 2913:2A16  2A 84 4FEF                           sub     al,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2A1A  79 02                                jns     loc_ret_346
-2913:2A1C                       loc_345:                                        ;  xref 2913:2A25, 2A2E, 2A37
+2913:2A1A  79 02                                jns     loc_ret_344
+2913:2A1C                       ret_0:                                          ;  xref 2913:2A25, 2A2E, 2A37
 2913:2A1C  32 C0                                xor     al,al
 
-2913:2A1E                       loc_ret_346:                                    ;  xref 2913:2A1A
+2913:2A1E                       loc_ret_344:                                    ;  xref 2913:2A1A
 2913:2A1E  C3                                   retn
-2913:2A1F                       loc_347:                                        ;  xref 2913:2994, 2A8B, 2BA7
+2913:2A1F                       ret_ofsy_m_6:                                   ;  xref 2913:2994, 2A8B, 2BA7
 2913:2A1F ,8A 84 5019                           mov     al,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2A23  2C 06                                sub     al,6
-2913:2A25  78 F5                                js      loc_345
+2913:2A25  78 F5                                js      ret_0
 2913:2A27  C3                                   retn
-2913:2A28                       loc_348:                                        ;  xref 2913:29DE, 2AE5, 2B48
+2913:2A28                       ret_32_m_ofsy:                                  ;  xref 2913:29DE, 2AE5, 2B48
 2913:2A28 ,B0 20                                mov     al,20h                  ; ' '
 2913:2A2A  2A 84 5019                           sub     al,ds:ship_ofsy[si]     ; (2913:5019=0)
-2913:2A2E  78 EC                                js      loc_345
+2913:2A2E  78 EC                                js      ret_0
 2913:2A30  C3                                   retn
-2913:2A31                       loc_349:                                        ;  xref 2913:2A03, 2B45, 2BA4
+2913:2A31                       ret_ofsx_m_6:                                   ;  xref 2913:2A03, 2B45, 2BA4
 2913:2A31 ,8A 84 4FEF                           mov     al,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:2A35  2C 06                                sub     al,6
-2913:2A37  78 E3                                js      loc_345
+2913:2A37  78 E3                                js      ret_0
 2913:2A39  C3                                   retn
-2913:2A3A                       loc_350:                                        ;  xref 2913:29C7, 2AAD, 2AE2
+2913:2A3A                       ret_68_m_ofsx:                                  ;  xref 2913:29C7, 2AAD, 2AE2
 2913:2A3A ,B0 44                                mov     al,44h                  ; 'D'
 2913:2A3C  2A 84 4FEF                           sub     al,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:2A40  C3                                   retn
-2913:2A41                       loc_351:                                        ;  xref 2913:29A2, 2A87, 2BA1
+2913:2A41                       ret_31_p_ofsy:                                  ;  xref 2913:29A2, 2A87, 2BA1
 2913:2A41 ,B0 1F                                mov     al,1Fh
 2913:2A43  02 84 5019                           add     al,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2A47  C3                                   retn
-2913:2A48                       loc_352:                                        ;  xref 2913:29EC, 2B0E, 2B6B
+2913:2A48                       ret_69_m_ofsy:                                  ;  xref 2913:29EC, 2B0E, 2B6B
 2913:2A48 ,B0 45                                mov     al,45h                  ; 'E'
 2913:2A4A  2A 84 5019                           sub     al,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2A4E  C3                                   retn
-2913:2A4F                       loc_353:                                        ;  xref 2913:2A11, 2B42, 2BD1
+2913:2A4F                       ret_30_p_ofsx:                                  ;  xref 2913:2A11, 2B42, 2BD1
 2913:2A4F ,B0 1E                                mov     al,1Eh
 2913:2A51  02 84 4FEF                           add     al,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:2A55  C3                                   retn
@@ -5540,42 +5540,42 @@
 2913:2A59  B3 25                                mov     bl,25h                  ; '%'
 2913:2A5B  2A 9C 5019                           sub     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2A5F  3A 9C 4FEF                           cmp     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2A63  72 28                                jb      loc_358
-2913:2A65  E8 0174                              call    proc_55                 ; (2BDC)
-2913:2A68  75 21                                jnz     loc_357
+2913:2A63  72 28                                jb      loc_349
+2913:2A65  E8 0174                              call    check_up                ; (2BDC)
+2913:2A68  75 21                                jnz     loc_348
 2913:2A6A  F6 C7 81                             test    bh,81h
-2913:2A6D  75 1A                                jnz     loc_356
+2913:2A6D  75 1A                                jnz     loc_347
 2913:2A6F  B3 1D                                mov     bl,1Dh
 2913:2A71  2A 9C 5019                           sub     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
-2913:2A75  72 06                                jc      loc_354
+2913:2A75  72 06                                jc      loc_345
 2913:2A77  3A 9C 4FEF                           cmp     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2A7B  73 0A                                jae     loc_355
-2913:2A7D                       loc_354:                                        ;  xref 2913:2A75
+2913:2A7B  73 0A                                jae     loc_346
+2913:2A7D                       loc_345:                                        ;  xref 2913:2A75
 2913:2A7D  F6 C7 08                             test    bh,8
-2913:2A80  75 07                                jnz     loc_356
-2913:2A82  E8 014F                              call    proc_54                 ; (2BD4)
-2913:2A85  75 02                                jnz     loc_356
-2913:2A87                       loc_355:                                        ;  xref 2913:2A7B
-2913:2A87  EB B8                                jmp     short loc_351           ; (2A41)
-2913:2A89                       loc_356:                                        ;  xref 2913:2A6D, 2A80, 2A85, 2A90
-2913:2A89  EB 89                                jmp     short loc_344           ; (2A14)
-2913:2A8B                       loc_357:                                        ;  xref 2913:2A68, 2A95, 2AA6, 2AAB
-2913:2A8B  EB 92                                jmp     short loc_347           ; (2A1F)
-2913:2A8D                       loc_358:                                        ;  xref 2913:2A63
-2913:2A8D  E8 0144                              call    proc_54                 ; (2BD4)
-2913:2A90  75 F7                                jnz     loc_356
+2913:2A80  75 07                                jnz     loc_347
+2913:2A82  E8 014F                              call    check_right             ; (2BD4)
+2913:2A85  75 02                                jnz     loc_347
+2913:2A87                       loc_346:                                        ;  xref 2913:2A7B
+2913:2A87  EB B8                                jmp     short ret_31_p_ofsy     ; (2A41)
+2913:2A89                       loc_347:                                        ;  xref 2913:2A6D, 2A80, 2A85, 2A90
+2913:2A89  EB 89                                jmp     short ret_31_m_ofsx     ; (2A14)
+2913:2A8B                       loc_348:                                        ;  xref 2913:2A68, 2A95, 2AA6, 2AAB
+2913:2A8B  EB 92                                jmp     short ret_ofsy_m_6      ; (2A1F)
+2913:2A8D                       loc_349:                                        ;  xref 2913:2A63
+2913:2A8D  E8 0144                              call    check_right             ; (2BD4)
+2913:2A90  75 F7                                jnz     loc_347
 2913:2A92  F6 C7 88                             test    bh,88h
-2913:2A95  75 F4                                jnz     loc_357
+2913:2A95  75 F4                                jnz     loc_348
 2913:2A97  B3 2C                                mov     bl,2Ch                  ; ','
 2913:2A99  2A 9C 5019                           sub     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2A9D  3A 9C 4FEF                           cmp     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2AA1  72 0A                                jb      loc_359
+2913:2AA1  72 0A                                jb      loc_350
 2913:2AA3  F6 C7 81                             test    bh,81h
-2913:2AA6  75 E3                                jnz     loc_357
-2913:2AA8  E8 0131                              call    proc_55                 ; (2BDC)
-2913:2AAB  75 DE                                jnz     loc_357
-2913:2AAD                       loc_359:                                        ;  xref 2913:2AA1
-2913:2AAD  EB 8B                                jmp     short loc_350           ; (2A3A)
+2913:2AA6  75 E3                                jnz     loc_348
+2913:2AA8  E8 0131                              call    check_up                ; (2BDC)
+2913:2AAB  75 DE                                jnz     loc_348
+2913:2AAD                       loc_350:                                        ;  xref 2913:2AA1
+2913:2AAD  EB 8B                                jmp     short ret_68_m_ofsx     ; (2A3A)
                                 proc_50         endp
 
 
@@ -5590,44 +5590,44 @@
 2913:2AB2  8A 9C 4FEF                           mov     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:2AB6  80 C3 01                             add     bl,1
 2913:2AB9  3A 9C 5019                           cmp     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
-2913:2ABD  72 2C                                jb      loc_364
-2913:2ABF  E8 0112                              call    proc_54                 ; (2BD4)
-2913:2AC2  75 24                                jnz     loc_363
+2913:2ABD  72 2C                                jb      loc_355
+2913:2ABF  E8 0112                              call    check_right             ; (2BD4)
+2913:2AC2  75 24                                jnz     loc_354
 2913:2AC4  F6 C7 82                             test    bh,82h
-2913:2AC7  75 1C                                jnz     loc_362
+2913:2AC7  75 1C                                jnz     loc_353
 2913:2AC9  8A 9C 4FEF                           mov     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:2ACD  80 EB 07                             sub     bl,7
-2913:2AD0  72 06                                jc      loc_360
+2913:2AD0  72 06                                jc      loc_351
 2913:2AD2  3A 9C 5019                           cmp     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
-2913:2AD6  73 0A                                jae     loc_361
-2913:2AD8                       loc_360:                                        ;  xref 2913:2AD0
+2913:2AD6  73 0A                                jae     loc_352
+2913:2AD8                       loc_351:                                        ;  xref 2913:2AD0
 2913:2AD8  F6 C7 01                             test    bh,1
-2913:2ADB  75 08                                jnz     loc_362
-2913:2ADD  E8 0104                              call    proc_56                 ; (2BE4)
-2913:2AE0  75 03                                jnz     loc_362
-2913:2AE2                       loc_361:                                        ;  xref 2913:2AD6
-2913:2AE2  E9 FF55                              jmp     loc_350                 ; (2A3A)
-2913:2AE5                       loc_362:                                        ;  xref 2913:2AC7, 2ADB, 2AE0, 2AEE
-2913:2AE5  E9 FF40                              jmp     loc_348                 ; (2A28)
-2913:2AE8                       loc_363:                                        ;  xref 2913:2AC2, 2AF3, 2B07, 2B0C
-2913:2AE8  E9 FF29                              jmp     loc_344                 ; (2A14)
-2913:2AEB                       loc_364:                                        ;  xref 2913:2ABD
-2913:2AEB  E8 00F6                              call    proc_56                 ; (2BE4)
-2913:2AEE  75 F5                                jnz     loc_362
+2913:2ADB  75 08                                jnz     loc_353
+2913:2ADD  E8 0104                              call    check_down              ; (2BE4)
+2913:2AE0  75 03                                jnz     loc_353
+2913:2AE2                       loc_352:                                        ;  xref 2913:2AD6
+2913:2AE2  E9 FF55                              jmp     ret_68_m_ofsx           ; (2A3A)
+2913:2AE5                       loc_353:                                        ;  xref 2913:2AC7, 2ADB, 2AE0, 2AEE
+2913:2AE5  E9 FF40                              jmp     ret_32_m_ofsy           ; (2A28)
+2913:2AE8                       loc_354:                                        ;  xref 2913:2AC2, 2AF3, 2B07, 2B0C
+2913:2AE8  E9 FF29                              jmp     ret_31_m_ofsx           ; (2A14)
+2913:2AEB                       loc_355:                                        ;  xref 2913:2ABD
+2913:2AEB  E8 00F6                              call    check_down              ; (2BE4)
+2913:2AEE  75 F5                                jnz     loc_353
 2913:2AF0  F6 C7 81                             test    bh,81h
-2913:2AF3  75 F3                                jnz     loc_363
+2913:2AF3  75 F3                                jnz     loc_354
 2913:2AF5  8A 9C 5019                           mov     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2AF9  80 EB 09                             sub     bl,9
-2913:2AFC  72 06                                jc      loc_365
+2913:2AFC  72 06                                jc      loc_356
 2913:2AFE  3A 9C 4FEF                           cmp     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2B02  73 0A                                jae     loc_366
-2913:2B04                       loc_365:                                        ;  xref 2913:2AFC
+2913:2B02  73 0A                                jae     loc_357
+2913:2B04                       loc_356:                                        ;  xref 2913:2AFC
 2913:2B04  F6 C7 02                             test    bh,2
-2913:2B07  75 DF                                jnz     loc_363
-2913:2B09  E8 00C8                              call    proc_54                 ; (2BD4)
-2913:2B0C  75 DA                                jnz     loc_363
-2913:2B0E                       loc_366:                                        ;  xref 2913:2B02
-2913:2B0E  E9 FF37                              jmp     loc_352                 ; (2A48)
+2913:2B07  75 DF                                jnz     loc_354
+2913:2B09  E8 00C8                              call    check_right             ; (2BD4)
+2913:2B0C  75 DA                                jnz     loc_354
+2913:2B0E                       loc_357:                                        ;  xref 2913:2B02
+2913:2B0E  E9 FF37                              jmp     ret_69_m_ofsy           ; (2A48)
                                 proc_51         endp
 
 
@@ -5642,42 +5642,42 @@
 2913:2B14  B3 25                                mov     bl,25h                  ; '%'
 2913:2B16  2A 9C 5019                           sub     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2B1A  3A 9C 4FEF                           cmp     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2B1E  72 2B                                jb      loc_371
-2913:2B20  E8 00C9                              call    proc_57                 ; (2BEC)
-2913:2B23  75 20                                jnz     loc_369
+2913:2B1E  72 2B                                jb      loc_362
+2913:2B20  E8 00C9                              call    check_left              ; (2BEC)
+2913:2B23  75 20                                jnz     loc_360
 2913:2B25  F6 C7 82                             test    bh,82h
-2913:2B28  75 1E                                jnz     loc_370
+2913:2B28  75 1E                                jnz     loc_361
 2913:2B2A  B3 1D                                mov     bl,1Dh
 2913:2B2C  2A 9C 5019                           sub     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
-2913:2B30  72 06                                jc      loc_367
+2913:2B30  72 06                                jc      loc_358
 2913:2B32  3A 9C 4FEF                           cmp     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2B36  73 0A                                jae     loc_368
-2913:2B38                       loc_367:                                        ;  xref 2913:2B30
+2913:2B36  73 0A                                jae     loc_359
+2913:2B38                       loc_358:                                        ;  xref 2913:2B30
 2913:2B38  F6 C7 04                             test    bh,4
-2913:2B3B  75 0B                                jnz     loc_370
-2913:2B3D  E8 00A4                              call    proc_56                 ; (2BE4)
-2913:2B40  75 06                                jnz     loc_370
-2913:2B42                       loc_368:                                        ;  xref 2913:2B36
-2913:2B42  E9 FF0A                              jmp     loc_353                 ; (2A4F)
-2913:2B45                       loc_369:                                        ;  xref 2913:2B23, 2B53, 2B64, 2B69
-2913:2B45  E9 FEE9                              jmp     loc_349                 ; (2A31)
-2913:2B48                       loc_370:                                        ;  xref 2913:2B28, 2B3B, 2B40, 2B4E
-2913:2B48  E9 FEDD                              jmp     loc_348                 ; (2A28)
-2913:2B4B                       loc_371:                                        ;  xref 2913:2B1E
-2913:2B4B  E8 0096                              call    proc_56                 ; (2BE4)
-2913:2B4E  75 F8                                jnz     loc_370
+2913:2B3B  75 0B                                jnz     loc_361
+2913:2B3D  E8 00A4                              call    check_down              ; (2BE4)
+2913:2B40  75 06                                jnz     loc_361
+2913:2B42                       loc_359:                                        ;  xref 2913:2B36
+2913:2B42  E9 FF0A                              jmp     ret_30_p_ofsx           ; (2A4F)
+2913:2B45                       loc_360:                                        ;  xref 2913:2B23, 2B53, 2B64, 2B69
+2913:2B45  E9 FEE9                              jmp     ret_ofsx_m_6            ; (2A31)
+2913:2B48                       loc_361:                                        ;  xref 2913:2B28, 2B3B, 2B40, 2B4E
+2913:2B48  E9 FEDD                              jmp     ret_32_m_ofsy           ; (2A28)
+2913:2B4B                       loc_362:                                        ;  xref 2913:2B1E
+2913:2B4B  E8 0096                              call    check_down              ; (2BE4)
+2913:2B4E  75 F8                                jnz     loc_361
 2913:2B50  F6 C7 84                             test    bh,84h
-2913:2B53  75 F0                                jnz     loc_369
+2913:2B53  75 F0                                jnz     loc_360
 2913:2B55  B3 2C                                mov     bl,2Ch                  ; ','
 2913:2B57  2A 9C 5019                           sub     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2B5B  3A 9C 4FEF                           cmp     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2B5F  72 0A                                jb      loc_372
+2913:2B5F  72 0A                                jb      loc_363
 2913:2B61  F6 C7 02                             test    bh,2
-2913:2B64  75 DF                                jnz     loc_369
-2913:2B66  E8 0083                              call    proc_57                 ; (2BEC)
-2913:2B69  75 DA                                jnz     loc_369
-2913:2B6B                       loc_372:                                        ;  xref 2913:2B5F
-2913:2B6B  E9 FEDA                              jmp     loc_352                 ; (2A48)
+2913:2B64  75 DF                                jnz     loc_360
+2913:2B66  E8 0083                              call    check_left              ; (2BEC)
+2913:2B69  75 DA                                jnz     loc_360
+2913:2B6B                       loc_363:                                        ;  xref 2913:2B5F
+2913:2B6B  E9 FEDA                              jmp     ret_69_m_ofsy           ; (2A48)
                                 proc_52         endp
 
 
@@ -5692,112 +5692,112 @@
 2913:2B71  8A 9C 4FEF                           mov     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:2B75  80 C3 01                             add     bl,1
 2913:2B78  3A 9C 5019                           cmp     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
-2913:2B7C  72 2C                                jb      loc_377
-2913:2B7E  E8 005B                              call    proc_55                 ; (2BDC)
-2913:2B81  75 24                                jnz     loc_376
+2913:2B7C  72 2C                                jb      loc_368
+2913:2B7E  E8 005B                              call    check_up                ; (2BDC)
+2913:2B81  75 24                                jnz     loc_367
 2913:2B83  F6 C7 84                             test    bh,84h
-2913:2B86  75 1C                                jnz     loc_375
+2913:2B86  75 1C                                jnz     loc_366
 2913:2B88  8A 9C 4FEF                           mov     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
 2913:2B8C  80 EB 07                             sub     bl,7
-2913:2B8F  72 06                                jc      loc_373
+2913:2B8F  72 06                                jc      loc_364
 2913:2B91  3A 9C 5019                           cmp     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
-2913:2B95  73 0A                                jae     loc_374
-2913:2B97                       loc_373:                                        ;  xref 2913:2B8F
+2913:2B95  73 0A                                jae     loc_365
+2913:2B97                       loc_364:                                        ;  xref 2913:2B8F
 2913:2B97  F6 C7 08                             test    bh,8
-2913:2B9A  75 08                                jnz     loc_375
-2913:2B9C  E8 004D                              call    proc_57                 ; (2BEC)
-2913:2B9F  75 03                                jnz     loc_375
-2913:2BA1                       loc_374:                                        ;  xref 2913:2B95
-2913:2BA1  E9 FE9D                              jmp     loc_351                 ; (2A41)
-2913:2BA4                       loc_375:                                        ;  xref 2913:2B86, 2B9A, 2B9F, 2BAD
-2913:2BA4  E9 FE8A                              jmp     loc_349                 ; (2A31)
-2913:2BA7                       loc_376:                                        ;  xref 2913:2B81, 2BB1, 2BB6, 2BCA
+2913:2B9A  75 08                                jnz     loc_366
+2913:2B9C  E8 004D                              call    check_left              ; (2BEC)
+2913:2B9F  75 03                                jnz     loc_366
+2913:2BA1                       loc_365:                                        ;  xref 2913:2B95
+2913:2BA1  E9 FE9D                              jmp     ret_31_p_ofsy           ; (2A41)
+2913:2BA4                       loc_366:                                        ;  xref 2913:2B86, 2B9A, 2B9F, 2BAD
+2913:2BA4  E9 FE8A                              jmp     ret_ofsx_m_6            ; (2A31)
+2913:2BA7                       loc_367:                                        ;  xref 2913:2B81, 2BB1, 2BB6, 2BCA
                                                                                 ;            2BCF
-2913:2BA7  E9 FE75                              jmp     loc_347                 ; (2A1F)
-2913:2BAA                       loc_377:                                        ;  xref 2913:2B7C
-2913:2BAA  E8 003F                              call    proc_57                 ; (2BEC)
-2913:2BAD  75 F5                                jnz     loc_375
+2913:2BA7  E9 FE75                              jmp     ret_ofsy_m_6            ; (2A1F)
+2913:2BAA                       loc_368:                                        ;  xref 2913:2B7C
+2913:2BAA  E8 003F                              call    check_left              ; (2BEC)
+2913:2BAD  75 F5                                jnz     loc_366
 2913:2BAF  84 FF                                test    bh,bh
-2913:2BB1  78 F4                                js      loc_376
+2913:2BB1  78 F4                                js      loc_367
 2913:2BB3  F6 C7 08                             test    bh,8
-2913:2BB6  75 EF                                jnz     loc_376
+2913:2BB6  75 EF                                jnz     loc_367
 2913:2BB8  8A 9C 5019                           mov     bl,ds:ship_ofsy[si]     ; (2913:5019=0)
 2913:2BBC  80 EB 09                             sub     bl,9
-2913:2BBF  72 06                                jc      loc_378
+2913:2BBF  72 06                                jc      loc_369
 2913:2BC1  3A 9C 4FEF                           cmp     bl,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2BC5  73 0A                                jae     loc_379
-2913:2BC7                       loc_378:                                        ;  xref 2913:2BBF
+2913:2BC5  73 0A                                jae     loc_370
+2913:2BC7                       loc_369:                                        ;  xref 2913:2BBF
 2913:2BC7  F6 C7 04                             test    bh,4
-2913:2BCA  75 DB                                jnz     loc_376
-2913:2BCC  E8 000D                              call    proc_55                 ; (2BDC)
-2913:2BCF  75 D6                                jnz     loc_376
-2913:2BD1                       loc_379:                                        ;  xref 2913:2BC5
-2913:2BD1  E9 FE7B                              jmp     loc_353                 ; (2A4F)
+2913:2BCA  75 DB                                jnz     loc_367
+2913:2BCC  E8 000D                              call    check_up                ; (2BDC)
+2913:2BCF  75 D6                                jnz     loc_367
+2913:2BD1                       loc_370:                                        ;  xref 2913:2BC5
+2913:2BD1  E9 FE7B                              jmp     ret_30_p_ofsx           ; (2A4F)
                                 proc_53         endp
 
 
                                 ;==========================================================================
-                                ;                          proc_54
+                                ;                          check_right
                                 ;
                                 ;         Called from:   2913:29A5, 2A82, 2A8D, 2ABF, 2B09
                                 ;==========================================================================
 
-2913:2BD4                       proc_54         proc    near
+2913:2BD4                       check_right     proc    near
 2913:2BD4  A8 04                                test    al,4
-2913:2BD6  75 03                                jnz     loc_ret_380
+2913:2BD6  75 03                                jnz     loc_ret_371
 2913:2BD8  84 65 01                             test    ah,[di+1]
 
-2913:2BDB                       loc_ret_380:                                    ;  xref 2913:2BD6
+2913:2BDB                       loc_ret_371:                                    ;  xref 2913:2BD6
 2913:2BDB  C3                                   retn
-                                proc_54         endp
+                                check_right     endp
 
 
                                 ;==========================================================================
-                                ;                          proc_55
+                                ;                          check_up
                                 ;
                                 ;         Called from:   2913:2980, 2A65, 2AA8, 2B7E, 2BCC
                                 ;==========================================================================
 
-2913:2BDC                       proc_55         proc    near
+2913:2BDC                       check_up        proc    near
 2913:2BDC  A8 02                                test    al,2
-2913:2BDE  75 03                                jnz     loc_ret_381
+2913:2BDE  75 03                                jnz     loc_ret_372
 2913:2BE0  84 65 C0                             test    ah,[di-40h]
 
-2913:2BE3                       loc_ret_381:                                    ;  xref 2913:2BDE
+2913:2BE3                       loc_ret_372:                                    ;  xref 2913:2BDE
 2913:2BE3  C3                                   retn
-                                proc_55         endp
+                                check_up        endp
 
 
                                 ;==========================================================================
-                                ;                          proc_56
+                                ;                          check_down
                                 ;
                                 ;         Called from:   2913:29CA, 2ADD, 2AEB, 2B3D, 2B4B
                                 ;==========================================================================
 
-2913:2BE4                       proc_56         proc    near
+2913:2BE4                       check_down      proc    near
 2913:2BE4  A8 08                                test    al,8
-2913:2BE6  75 03                                jnz     loc_ret_382
+2913:2BE6  75 03                                jnz     loc_ret_373
 2913:2BE8  84 65 40                             test    ah,[di+40h]
 
-2913:2BEB                       loc_ret_382:                                    ;  xref 2913:2BE6
+2913:2BEB                       loc_ret_373:                                    ;  xref 2913:2BE6
 2913:2BEB  C3                                   retn
-                                proc_56         endp
+                                check_down      endp
 
 
                                 ;==========================================================================
-                                ;                          proc_57
+                                ;                          check_left
                                 ;
                                 ;         Called from:   2913:29EF, 2B20, 2B66, 2B9C, 2BAA
                                 ;==========================================================================
 
-2913:2BEC                       proc_57         proc    near
+2913:2BEC                       check_left      proc    near
 2913:2BEC  A8 01                                test    al,1
-2913:2BEE  75 03                                jnz     loc_ret_383
+2913:2BEE  75 03                                jnz     loc_ret_374
 2913:2BF0  84 65 FF                             test    ah,[di-1]
 
-2913:2BF3                       loc_ret_383:                                    ;  xref 2913:2BEE
+2913:2BF3                       loc_ret_374:                                    ;  xref 2913:2BEE
 2913:2BF3  C3                                   retn
-                                proc_57         endp
+                                check_left      endp
 
 
                                 ;==========================================================================
@@ -5807,48 +5807,48 @@
                                 ;==========================================================================
 
 2913:2BF4                       proc_58         proc    near
-2913:2BF4                       loc_384:                                        ;  xref 2913:2D1F
+2913:2BF4                       loc_375:                                        ;  xref 2913:2D1F
 2913:2BF4 ,E8 FD55                              call    proc_45                 ; (294C)
 2913:2BF7  8A F8                                mov     bh,al
 2913:2BF9  8A 9C 50D7                           mov     bl,ds:ship_angle_e[si]  ; (2913:50D7=0)
 2913:2BFD  3A BC 50B7                           cmp     bh,ds:vel_magn_e[si]    ; (2913:50B7=0)
-2913:2C01  73 09                                jae     loc_386
-2913:2C03                       loc_385:                                        ;  xref 2913:2C37
+2913:2C01  73 09                                jae     loc_377
+2913:2C03                       loc_376:                                        ;  xref 2913:2C37
 2913:2C03  B0 02                                mov     al,2
 2913:2C05  E8 02C9                              call    rnd_update              ; (2ED1)
-2913:2C08  74 11                                jz      loc_387
-2913:2C0A  EB 13                                jmp     short loc_388           ; (2C1F)
-2913:2C0C                       loc_386:                                        ;  xref 2913:2C01
+2913:2C08  74 11                                jz      loc_378
+2913:2C0A  EB 13                                jmp     short loc_379           ; (2C1F)
+2913:2C0C                       loc_377:                                        ;  xref 2913:2C01
 2913:2C0C  B0 08                                mov     al,8
 2913:2C0E  E8 02C0                              call    rnd_update              ; (2ED1)
-2913:2C11  74 08                                jz      loc_387
+2913:2C11  74 08                                jz      loc_378
 2913:2C13  3C 01                                cmp     al,1
-2913:2C15  74 08                                je      loc_388
+2913:2C15  74 08                                je      loc_379
 2913:2C17  8A C7                                mov     al,bh
-2913:2C19  EB 12                                jmp     short loc_390           ; (2C2D)
-2913:2C1B                       loc_387:                                        ;  xref 2913:2C08, 2C11
+2913:2C19  EB 12                                jmp     short loc_381           ; (2C2D)
+2913:2C1B                       loc_378:                                        ;  xref 2913:2C08, 2C11
 2913:2C1B  FE CB                                dec     bl
-2913:2C1D  EB 02                                jmp     short loc_389           ; (2C21)
-2913:2C1F                       loc_388:                                        ;  xref 2913:2C0A, 2C15
+2913:2C1D  EB 02                                jmp     short loc_380           ; (2C21)
+2913:2C1F                       loc_379:                                        ;  xref 2913:2C0A, 2C15
 2913:2C1F  FE C3                                inc     bl
-2913:2C21                       loc_389:                                        ;  xref 2913:2C1D
+2913:2C21                       loc_380:                                        ;  xref 2913:2C1D
 2913:2C21  80 E3 07                             and     bl,7
 2913:2C24  88 9C 50D7                           mov     ds:ship_angle_e[si],bl  ; (2913:50D7=0)
 2913:2C28  FE C6                                inc     dh
 2913:2C2A  E8 FD1F                              call    proc_45                 ; (294C)
-2913:2C2D                       loc_390:                                        ;  xref 2913:2C19
+2913:2C2D                       loc_381:                                        ;  xref 2913:2C19
 2913:2C2D  8A F8                                mov     bh,al
 2913:2C2F  2A 84 50B7                           sub     al,ds:vel_magn_e[si]    ; (2913:50B7=0)
-2913:2C33  73 08                                jnc     loc_391
+2913:2C33  73 08                                jnc     loc_382
 2913:2C35  84 F6                                test    dh,dh
-2913:2C37  78 CA                                js      loc_385
+2913:2C37  78 CA                                js      loc_376
 2913:2C39  8A C7                                mov     al,bh
-2913:2C3B  EB 08                                jmp     short loc_392           ; (2C45)
-2913:2C3D                       loc_391:                                        ;  xref 2913:2C33
+2913:2C3B  EB 08                                jmp     short loc_383           ; (2C45)
+2913:2C3D                       loc_382:                                        ;  xref 2913:2C33
 2913:2C3D  E8 02BA                              call    rndnum                  ; (2EFA)
 2913:2C40  40                                   inc     ax
 2913:2C41  02 84 50B7                           add     al,ds:vel_magn_e[si]    ; (2913:50B7=0)
-2913:2C45                       loc_392:                                        ;  xref 2913:2C3B
+2913:2C45                       loc_383:                                        ;  xref 2913:2C3B
 2913:2C45  8A D0                                mov     dl,al
 2913:2C47  C3                                   retn
                                 proc_58         endp
@@ -5864,12 +5864,12 @@
 2913:2C48  B0 02                                mov     al,2
 2913:2C4A  E8 0284                              call    rnd_update              ; (2ED1)
 2913:2C4D  8A A4 50D7                           mov     ah,ds:ship_angle_e[si]  ; (2913:50D7=0)
-2913:2C51  74 04                                jz      loc_393
+2913:2C51  74 04                                jz      loc_384
 2913:2C53  FE C4                                inc     ah
-2913:2C55  EB 02                                jmp     short loc_394           ; (2C59)
-2913:2C57                       loc_393:                                        ;  xref 2913:2C51
+2913:2C55  EB 02                                jmp     short loc_385           ; (2C59)
+2913:2C57                       loc_384:                                        ;  xref 2913:2C51
 2913:2C57  FE CC                                dec     ah
-2913:2C59                       loc_394:                                        ;  xref 2913:2C55
+2913:2C59                       loc_385:                                        ;  xref 2913:2C55
 2913:2C59  80 E4 07                             and     ah,7
 2913:2C5C  88 A4 50D7                           mov     ds:ship_angle_e[si],ah  ; (2913:50D7=0)
 2913:2C60  E8 FCE9                              call    proc_45                 ; (294C)
@@ -5917,7 +5917,7 @@
 2913:2CBE  2A 06 4FC5                           sub     al,ds:ship_celly        ; (2913:4FC5=0)
 2913:2CC2  04 04                                add     al,4
 2913:2CC4  3C 09                                cmp     al,9
-2913:2CC6  73 57                                jae     loc_396
+2913:2CC6  73 57                                jae     loc_387
 2913:2CC8  8A E0                                mov     ah,al
 2913:2CCA  D0 E0                                shl     al,1
 2913:2CCC  D0 E0                                shl     al,1
@@ -5927,14 +5927,14 @@
 2913:2CD6  2A 06 4F9B                           sub     al,ds:ship_cellx        ; (2913:4F9B=0)
 2913:2CDA  04 04                                add     al,4
 2913:2CDC  3C 09                                cmp     al,9
-2913:2CDE  73 3F                                jae     loc_396
+2913:2CDE  73 3F                                jae     loc_387
 2913:2CE0  02 C4                                add     al,ah
 2913:2CE2  98                                   cbw
 2913:2CE3  8B F8                                mov     di,ax
 2913:2CE5  8A 85 5436                           mov     al,ds:var_207e[di]      ; (2913:5436=0)
 2913:2CE9  3C 08                                cmp     al,8
-2913:2CEB  77 32                                ja      loc_396
-2913:2CED  74 74                                jz      loc_400
+2913:2CEB  77 32                                ja      loc_387
+2913:2CED  74 74                                jz      loc_391
 2913:2CEF  8A F8                                mov     bh,al
 2913:2CF1  8A D8                                mov     bl,al
 2913:2CF3  D0 E8                                shr     al,1
@@ -5946,27 +5946,27 @@
 2913:2D01  8B F8                                mov     di,ax
 2913:2D03  8A 85 5436                           mov     al,ds:var_207e[di]      ; (2913:5436=0)
 2913:2D07  3C 08                                cmp     al,8
-2913:2D09  74 0E                                je      loc_395
+2913:2D09  74 0E                                je      loc_386
 2913:2D0B  3A C7                                cmp     al,bh
-2913:2D0D  74 0A                                je      loc_395
+2913:2D0D  74 0A                                je      loc_386
 2913:2D0F  D0 E0                                shl     al,1
 2913:2D11  02 C5                                add     al,ch
 2913:2D13  8B F8                                mov     di,ax
 2913:2D15  8A 9D 2C6F                           mov     bl,var_173[di]          ; (2913:2C6F=0)
-2913:2D19                       loc_395:                                        ;  xref 2913:2D09, 2D0D, 2D2C
+2913:2D19                       loc_386:                                        ;  xref 2913:2D09, 2D0D, 2D2C
 2913:2D19 ,E8 0173                              call    proc_62                 ; (2E8F)
-2913:2D1C  73 04                                jnc     loc_397
+2913:2D1C  73 04                                jnc     loc_388
 2913:2D1E  C3                                   retn
-2913:2D1F                       loc_396:                                        ;  xref 2913:2CC6, 2CDE, 2CEB
-2913:2D1F  E9 FED2                              jmp     loc_384                 ; (2BF4)
-2913:2D22                       loc_397:                                        ;  xref 2913:2D1C
+2913:2D1F                       loc_387:                                        ;  xref 2913:2CC6, 2CDE, 2CEB
+2913:2D1F  E9 FED2                              jmp     loc_375                 ; (2BF4)
+2913:2D22                       loc_388:                                        ;  xref 2913:2D1C
 2913:2D22  FE C5                                inc     ch
-2913:2D24  75 08                                jnz     loc_398
+2913:2D24  75 08                                jnz     loc_389
 2913:2D26  3A DF                                cmp     bl,bh
-2913:2D28  74 04                                je      loc_398
+2913:2D28  74 04                                je      loc_389
 2913:2D2A  8A DF                                mov     bl,bh
-2913:2D2C  EB EB                                jmp     short loc_395           ; (2D19)
-2913:2D2E                       loc_398:                                        ;  xref 2913:2D24, 2D28
+2913:2D2C  EB EB                                jmp     short loc_386           ; (2D19)
+2913:2D2E                       loc_389:                                        ;  xref 2913:2D24, 2D28
 2913:2D2E  32 C0                                xor     al,al
 2913:2D30  80 BC 4FEF 13                        cmp     byte ptr ds:ship_ofsx[si],13h ; (2913:4FEF=0)
 2913:2D35  D0 D0                                rcl     al,1
@@ -5979,54 +5979,54 @@
 2913:2D45  8B F8                                mov     di,ax
 2913:2D47  8A 9D 2C7F                           mov     bl,var_174[di]          ; (2913:2C7F=7)
 2913:2D4B  E8 0132                              call    proc_61                 ; (2E80)
-2913:2D4E  73 01                                jnc     loc_399
+2913:2D4E  73 01                                jnc     loc_390
 2913:2D50  C3                                   retn
-2913:2D51                       loc_399:                                        ;  xref 2913:2D4E
+2913:2D51                       loc_390:                                        ;  xref 2913:2D4E
 2913:2D51  8A 8C 50D7                           mov     cl,ds:ship_angle_e[si]  ; (2913:50D7=0)
 2913:2D55  8A 85 2C8F                           mov     al,var_175[di]          ; (2913:2C8F=6)
 2913:2D59  88 84 50D7                           mov     ds:ship_angle_e[si],al  ; (2913:50D7=0)
 2913:2D5D  E8 FBEC                              call    proc_45                 ; (294C)
-2913:2D60  E9 0141                              jmp     loc_419                 ; (2EA4)
-2913:2D63                       loc_400:                                        ;  xref 2913:2CED
+2913:2D60  E9 0141                              jmp     loc_410                 ; (2EA4)
+2913:2D63                       loc_391:                                        ;  xref 2913:2CED
 2913:2D63 .BF 2C9F                              mov     di,offset var_176       ; (2913:2C9F=0)
 2913:2D66  B0 13                                mov     al,13h
 2913:2D68  8A F8                                mov     bh,al
 2913:2D6A  2A 06 5019                           sub     al,ds:ship_ofsy         ; (2913:5019=0)
 2913:2D6E  02 84 5019                           add     al,ds:ship_ofsy[si]     ; (2913:5019=0)
-2913:2D72  79 04                                jns     loc_401
+2913:2D72  79 04                                jns     loc_392
 2913:2D74  32 FF                                xor     bh,bh
-2913:2D76  EB 10                                jmp     short loc_402           ; (2D88)
-2913:2D78                       loc_401:                                        ;  xref 2913:2D72
+2913:2D76  EB 10                                jmp     short loc_393           ; (2D88)
+2913:2D78                       loc_392:                                        ;  xref 2913:2D72
 2913:2D78  3C 0E                                cmp     al,0Eh
-2913:2D7A  72 0C                                jb      loc_402
+2913:2D7A  72 0C                                jb      loc_393
 2913:2D7C  47                                   inc     di
 2913:2D7D  3C 19                                cmp     al,19h
-2913:2D7F  72 07                                jb      loc_402
+2913:2D7F  72 07                                jb      loc_393
 2913:2D81  47                                   inc     di
 2913:2D82  3C 26                                cmp     al,26h                  ; '&'
-2913:2D84  72 02                                jb      loc_402
+2913:2D84  72 02                                jb      loc_393
 2913:2D86  B7 25                                mov     bh,25h                  ; '%'
-2913:2D88                       loc_402:                                        ;  xref 2913:2D76, 2D7A, 2D7F, 2D84
+2913:2D88                       loc_393:                                        ;  xref 2913:2D76, 2D7A, 2D7F, 2D84
 2913:2D88  8A 25                                mov     ah,[di]
 2913:2D8A  33 FF                                xor     di,di
 2913:2D8C  B0 12                                mov     al,12h
 2913:2D8E  8A D8                                mov     bl,al
 2913:2D90  2A 06 4FEF                           sub     al,ds:ship_ofsx         ; (2913:4FEF=0)
 2913:2D94  02 84 4FEF                           add     al,ds:ship_ofsx[si]     ; (2913:4FEF=0)
-2913:2D98  79 04                                jns     loc_403
+2913:2D98  79 04                                jns     loc_394
 2913:2D9A  32 DB                                xor     bl,bl
-2913:2D9C  EB 10                                jmp     short loc_404           ; (2DAE)
-2913:2D9E                       loc_403:                                        ;  xref 2913:2D98
+2913:2D9C  EB 10                                jmp     short loc_395           ; (2DAE)
+2913:2D9E                       loc_394:                                        ;  xref 2913:2D98
 2913:2D9E  3C 0D                                cmp     al,0Dh
-2913:2DA0  72 0C                                jb      loc_404
+2913:2DA0  72 0C                                jb      loc_395
 2913:2DA2  47                                   inc     di
 2913:2DA3  3C 18                                cmp     al,18h
-2913:2DA5  72 07                                jb      loc_404
+2913:2DA5  72 07                                jb      loc_395
 2913:2DA7  47                                   inc     di
 2913:2DA8  3C 26                                cmp     al,26h                  ; '&'
-2913:2DAA  72 02                                jb      loc_404
+2913:2DAA  72 02                                jb      loc_395
 2913:2DAC  B3 25                                mov     bl,25h                  ; '%'
-2913:2DAE                       loc_404:                                        ;  xref 2913:2D9C, 2DA0, 2DA5, 2DAA
+2913:2DAE                       loc_395:                                        ;  xref 2913:2D9C, 2DA0, 2DA5, 2DAA
 2913:2DAE  8A C4                                mov     al,ah
 2913:2DB0  98                                   cbw
 2913:2DB1  03 C7                                add     ax,di
@@ -6034,19 +6034,19 @@
 2913:2DB5  8A E0                                mov     ah,al
 2913:2DB7  8A 85 2CA2                           mov     al,var_177[di]          ; (2913:2CA2=3)
 2913:2DBB  84 C0                                test    al,al
-2913:2DBD  78 35                                js      loc_408
+2913:2DBD  78 35                                js      loc_399
 2913:2DBF  3A 84 50D7                           cmp     al,ds:ship_angle_e[si]  ; (2913:50D7=0)
-2913:2DC3  74 2F                                je      loc_408
+2913:2DC3  74 2F                                je      loc_399
 2913:2DC5  8A C8                                mov     cl,al
 2913:2DC7  F6 C4 01                             test    ah,1
-2913:2DCA  75 2D                                jnz     loc_409
-2913:2DCC                       loc_405:                                        ;  xref 2913:2E15, 2E19, 2E1E, 2E29
+2913:2DCA  75 2D                                jnz     loc_400
+2913:2DCC                       loc_396:                                        ;  xref 2913:2E15, 2E19, 2E1E, 2E29
                                                                                 ;            2E2F, 2E34, 2E3F
 2913:2DCC ,FE C6                                inc     dh
-2913:2DCE  74 04                                jz      loc_406
+2913:2DCE  74 04                                jz      loc_397
 2913:2DD0  FE CE                                dec     dh
-2913:2DD2  EB 1D                                jmp     short loc_407           ; (2DF1)
-2913:2DD4                       loc_406:                                        ;  xref 2913:2DCE
+2913:2DD2  EB 1D                                jmp     short loc_398           ; (2DF1)
+2913:2DD4                       loc_397:                                        ;  xref 2913:2DCE
 2913:2DD4  8A C1                                mov     al,cl
 2913:2DD6  2A 84 50D7                           sub     al,ds:ship_angle_e[si]  ; (2913:50D7=0)
 2913:2DDA  04 07                                add     al,7
@@ -6057,72 +6057,72 @@
 2913:2DE7  24 07                                and     al,7
 2913:2DE9  88 84 50D7                           mov     ds:ship_angle_e[si],al  ; (2913:50D7=0)
 2913:2DED  3A C8                                cmp     cl,al
-2913:2DEF  74 03                                je      loc_408
-2913:2DF1                       loc_407:                                        ;  xref 2913:2DD2
+2913:2DEF  74 03                                je      loc_399
+2913:2DF1                       loc_398:                                        ;  xref 2913:2DD2
 2913:2DF1  32 D2                                xor     dl,dl
 2913:2DF3  C3                                   retn
-2913:2DF4                       loc_408:                                        ;  xref 2913:2DBD, 2DC3, 2DEF, 2E13
+2913:2DF4                       loc_399:                                        ;  xref 2913:2DBD, 2DC3, 2DEF, 2E13
                                                                                 ;            2E20, 2E2B, 2E36, 2E41
                                                                                 ;            2E4C, 2E57, 2E62
 2913:2DF4 ,8A 94 50B7                           mov     dl,ds:vel_magn_e[si]    ; (2913:50B7=0)
 2913:2DF8  C3                                   retn
-2913:2DF9                       loc_409:                                        ;  xref 2913:2DCA
+2913:2DF9                       loc_400:                                        ;  xref 2913:2DCA
 2913:2DF9  8A 84 50D7                           mov     al,ds:ship_angle_e[si]  ; (2913:50D7=0)
 2913:2DFD  80 FC 01                             cmp     ah,1
-2913:2E00  74 4C                                je      loc_416
+2913:2E00  74 4C                                je      loc_407
 2913:2E02  80 FC 03                             cmp     ah,3
-2913:2E05  74 31                                je      loc_414
+2913:2E05  74 31                                je      loc_405
 2913:2E07  80 FC 05                             cmp     ah,5
-2913:2E0A  74 16                                je      loc_412
+2913:2E0A  74 16                                je      loc_403
 2913:2E0C  3C 01                                cmp     al,1
-2913:2E0E  75 07                                jne     loc_411
+2913:2E0E  75 07                                jne     loc_402
 2913:2E10  E8 005F                              call    c_2F_m_bl_m_bh          ; (2E72)
-2913:2E13  73 DF                                jnc     loc_408
-2913:2E15                       loc_410:                                        ;  xref 2913:2E45, 2E4A, 2E55, 2E5B
+2913:2E13  73 DF                                jnc     loc_399
+2913:2E15                       loc_401:                                        ;  xref 2913:2E45, 2E4A, 2E55, 2E5B
                                                                                 ;            2E60
-2913:2E15  EB B5                                jmp     short loc_405           ; (2DCC)
-2913:2E17                       loc_411:                                        ;  xref 2913:2E0E
+2913:2E15  EB B5                                jmp     short loc_396           ; (2DCC)
+2913:2E17                       loc_402:                                        ;  xref 2913:2E0E
 2913:2E17  3C 07                                cmp     al,7
-2913:2E19  75 B1                                jne     loc_405
+2913:2E19  75 B1                                jne     loc_396
 2913:2E1B  E8 005B                              call    c_0B_p_bl_m_bh          ; (2E79)
-2913:2E1E  72 AC                                jc      loc_405
-2913:2E20  EB D2                                jmp     short loc_408           ; (2DF4)
-2913:2E22                       loc_412:                                        ;  xref 2913:2E0A
+2913:2E1E  72 AC                                jc      loc_396
+2913:2E20  EB D2                                jmp     short loc_399           ; (2DF4)
+2913:2E22                       loc_403:                                        ;  xref 2913:2E0A
 2913:2E22  3C 05                                cmp     al,5
-2913:2E24  75 07                                jne     loc_413
+2913:2E24  75 07                                jne     loc_404
 2913:2E26  E8 0049                              call    c_2F_m_bl_m_bh          ; (2E72)
-2913:2E29  72 A1                                jc      loc_405
-2913:2E2B  EB C7                                jmp     short loc_408           ; (2DF4)
-2913:2E2D                       loc_413:                                        ;  xref 2913:2E24
+2913:2E29  72 A1                                jc      loc_396
+2913:2E2B  EB C7                                jmp     short loc_399           ; (2DF4)
+2913:2E2D                       loc_404:                                        ;  xref 2913:2E24
 2913:2E2D  3C 07                                cmp     al,7
-2913:2E2F  75 9B                                jne     loc_405
+2913:2E2F  75 9B                                jne     loc_396
 2913:2E31  E8 0037                              call    c_bl_m_0A_m_bh          ; (2E6B)
-2913:2E34  73 96                                jnc     loc_405
-2913:2E36  EB BC                                jmp     short loc_408           ; (2DF4)
-2913:2E38                       loc_414:                                        ;  xref 2913:2E05
+2913:2E34  73 96                                jnc     loc_396
+2913:2E36  EB BC                                jmp     short loc_399           ; (2DF4)
+2913:2E38                       loc_405:                                        ;  xref 2913:2E05
 2913:2E38  3C 03                                cmp     al,3
-2913:2E3A  75 07                                jne     loc_415
+2913:2E3A  75 07                                jne     loc_406
 2913:2E3C  E8 003A                              call    c_0B_p_bl_m_bh          ; (2E79)
-2913:2E3F  72 8B                                jc      loc_405
-2913:2E41  EB B1                                jmp     short loc_408           ; (2DF4)
-2913:2E43                       loc_415:                                        ;  xref 2913:2E3A
+2913:2E3F  72 8B                                jc      loc_396
+2913:2E41  EB B1                                jmp     short loc_399           ; (2DF4)
+2913:2E43                       loc_406:                                        ;  xref 2913:2E3A
 2913:2E43  3C 01                                cmp     al,1
-2913:2E45  75 CE                                jne     loc_410
+2913:2E45  75 CE                                jne     loc_401
 2913:2E47  E8 001A                              call    c_1A_m_bl_m_bh          ; (2E64)
-2913:2E4A  72 C9                                jc      loc_410
-2913:2E4C  EB A6                                jmp     short loc_408           ; (2DF4)
-2913:2E4E                       loc_416:                                        ;  xref 2913:2E00
+2913:2E4A  72 C9                                jc      loc_401
+2913:2E4C  EB A6                                jmp     short loc_399           ; (2DF4)
+2913:2E4E                       loc_407:                                        ;  xref 2913:2E00
 2913:2E4E  3C 05                                cmp     al,5
-2913:2E50  75 07                                jne     loc_417
+2913:2E50  75 07                                jne     loc_408
 2913:2E52  E8 000F                              call    c_1A_m_bl_m_bh          ; (2E64)
-2913:2E55  72 BE                                jc      loc_410
-2913:2E57  EB 9B                                jmp     short loc_408           ; (2DF4)
-2913:2E59                       loc_417:                                        ;  xref 2913:2E50
+2913:2E55  72 BE                                jc      loc_401
+2913:2E57  EB 9B                                jmp     short loc_399           ; (2DF4)
+2913:2E59                       loc_408:                                        ;  xref 2913:2E50
 2913:2E59  3C 03                                cmp     al,3
-2913:2E5B  75 B8                                jne     loc_410
+2913:2E5B  75 B8                                jne     loc_401
 2913:2E5D  E8 0012                              call    c_2F_m_bl_m_bh          ; (2E72)
-2913:2E60  72 B3                                jc      loc_410
-2913:2E62  EB 90                                jmp     short loc_408           ; (2DF4)
+2913:2E60  72 B3                                jc      loc_401
+2913:2E62  EB 90                                jmp     short loc_399           ; (2DF4)
 
                                 ;==== External Entry into Subroutine ======================================
                                 ;
@@ -6173,7 +6173,7 @@
 2913:2E84  88 9C 50D7                           mov     ds:ship_angle_e[si],bl  ; (2913:50D7=0)
 2913:2E88  E8 FAC1                              call    proc_45                 ; (294C)
 2913:2E8B  3C 0A                                cmp     al,0Ah
-2913:2E8D  EB 0D                                jmp     short loc_418           ; (2E9C)
+2913:2E8D  EB 0D                                jmp     short loc_409           ; (2E9C)
 
                                 ;==== External Entry into Subroutine ======================================
                                 ;
@@ -6184,16 +6184,16 @@
 2913:2E93  88 9C 50D7                           mov     ds:ship_angle_e[si],bl  ; (2913:50D7=0)
 2913:2E97  E8 FAB2                              call    proc_45                 ; (294C)
 2913:2E9A  3C 20                                cmp     al,20h                  ; ' '
-2913:2E9C                       loc_418:                                        ;  xref 2913:2E8D
-2913:2E9C  73 06                                jae     loc_419
+2913:2E9C                       loc_409:                                        ;  xref 2913:2E8D
+2913:2E9C  73 06                                jae     loc_410
 2913:2E9E  88 8C 50D7                           mov     ds:ship_angle_e[si],cl  ; (2913:50D7=0)
 2913:2EA2  F8                                   clc
 2913:2EA3  C3                                   retn
-2913:2EA4                       loc_419:                                        ;  xref 2913:2D60, 2E9C
+2913:2EA4                       loc_410:                                        ;  xref 2913:2D60, 2E9C
 2913:2EA4  8A E8                                mov     ch,al
 2913:2EA6  8A C3                                mov     al,bl
 2913:2EA8  2A C1                                sub     al,cl
-2913:2EAA  74 1B                                jz      loc_420
+2913:2EAA  74 1B                                jz      loc_411
 2913:2EAC  04 07                                add     al,7
 2913:2EAE  98                                   cbw
 2913:2EAF  8B E8                                mov     bp,ax
@@ -6203,15 +6203,15 @@
 2913:2EB9  88 84 50D7                           mov     ds:ship_angle_e[si],al  ; (2913:50D7=0)
 2913:2EBD  FE C6                                inc     dh
 2913:2EBF  3A C7                                cmp     al,bh
-2913:2EC1  74 04                                je      loc_420
+2913:2EC1  74 04                                je      loc_411
 2913:2EC3  32 D2                                xor     dl,dl
-2913:2EC5  EB 08                                jmp     short loc_421           ; (2ECF)
-2913:2EC7                       loc_420:                                        ;  xref 2913:2EAA, 2EC1
+2913:2EC5  EB 08                                jmp     short loc_412           ; (2ECF)
+2913:2EC7                       loc_411:                                        ;  xref 2913:2EAA, 2EC1
 2913:2EC7  8A C5                                mov     al,ch
 2913:2EC9  E8 002E                              call    rndnum                  ; (2EFA)
 2913:2ECC  40                                   inc     ax
 2913:2ECD  8A D0                                mov     dl,al
-2913:2ECF                       loc_421:                                        ;  xref 2913:2EC5
+2913:2ECF                       loc_412:                                        ;  xref 2913:2EC5
 2913:2ECF  F9                                   stc
 2913:2ED0  C3                                   retn
                                 proc_60         endp
@@ -6272,20 +6272,20 @@
 2913:2EFA                       rndnum          proc    near
 2913:2EFA  52                                   push    dx
 2913:2EFB  84 C0                                test    al,al
-2913:2EFD  74 14                                jz      loc_424
+2913:2EFD  74 14                                jz      loc_415
 2913:2EFF  4A                                   dec     dx
 2913:2F00  8A D0                                mov     dl,al
 2913:2F02  B6 01                                mov     dh,1
-2913:2F04                       loc_422:                                        ;  xref 2913:2F08
+2913:2F04                       loc_413:                                        ;  xref 2913:2F08
 2913:2F04  D0 E6                                shl     dh,1
 2913:2F06  D0 E8                                shr     al,1
-2913:2F08  75 FA                                jnz     loc_422
-2913:2F0A                       loc_423:                                        ;  xref 2913:2F11
+2913:2F08  75 FA                                jnz     loc_413
+2913:2F0A                       loc_414:                                        ;  xref 2913:2F11
 2913:2F0A  8A C6                                mov     al,dh
 2913:2F0C  E8 FFC2                              call    rnd_update              ; (2ED1)
 2913:2F0F  3A C2                                cmp     al,dl
-2913:2F11  73 F7                                jae     loc_423
-2913:2F13                       loc_424:                                        ;  xref 2913:2EFD
+2913:2F11  73 F7                                jae     loc_414
+2913:2F13                       loc_415:                                        ;  xref 2913:2EFD
 2913:2F13  5A                                   pop     dx
 2913:2F14  98                                   cbw
 2913:2F15  84 C0                                test    al,al
@@ -6305,24 +6305,24 @@
                                 ;==========================================================================
 
 2913:2F18                       maze_rnd_xy     proc    near
-2913:2F18                       loc_425:                                        ;  xref 2913:2F1F, 2F23, 2F39
+2913:2F18                       loc_416:                                        ;  xref 2913:2F1F, 2F23, 2F39
 2913:2F18  B0 40                                mov     al,40h                  ; '@'
 2913:2F1A  E8 FFB4                              call    rnd_update              ; (2ED1)
 2913:2F1D  3C 3E                                cmp     al,3Eh                  ; '>'
-2913:2F1F  73 F7                                jae     loc_425
+2913:2F1F  73 F7                                jae     loc_416
 2913:2F21  84 C0                                test    al,al
-2913:2F23  74 F3                                jz      loc_425
+2913:2F23  74 F3                                jz      loc_416
 2913:2F25  8A D0                                mov     dl,al
-2913:2F27                       loc_426:                                        ;  xref 2913:2F2E, 2F32
+2913:2F27                       loc_417:                                        ;  xref 2913:2F2E, 2F32
 2913:2F27  B0 40                                mov     al,40h                  ; '@'
 2913:2F29  E8 FFA5                              call    rnd_update              ; (2ED1)
 2913:2F2C  3C 3D                                cmp     al,3Dh                  ; '='
-2913:2F2E  73 F7                                jae     loc_426
+2913:2F2E  73 F7                                jae     loc_417
 2913:2F30  3C 03                                cmp     al,3
-2913:2F32  72 F3                                jb      loc_426
+2913:2F32  72 F3                                jb      loc_417
 2913:2F34  8A F0                                mov     dh,al
 2913:2F36  E8 0003                              call    maze_readxy             ; (2F3C)
-2913:2F39  78 DD                                js      loc_425
+2913:2F39  78 DD                                js      loc_416
 2913:2F3B  C3                                   retn
                                 maze_rnd_xy     endp
 
