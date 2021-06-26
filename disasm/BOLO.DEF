@@ -98,7 +98,7 @@ seg_a:12E6   sub, c 13          edit_digit
 seg_a:1321   sub, c 0B          draw_rect
 seg_a:13BC   sub, c 05          draw_bolo_8x20
 seg_a:1473   sub                proc_17
-seg_a:152B   sub                proc_18
+seg_a:152B   sub                is_actor_close
 seg_a:1623   sub, c 1A          update_bullets
 seg_a:169C   sub, c 19          adjust_bullets
 seg_a:16F0   sub                shoot_bullet    Shoot a bullet from actor di
@@ -119,7 +119,7 @@ seg_a:1EEF   sub                draw_base_horiz
 seg_a:1F63   sub                draw_base_vert
 seg_a:1FBF   sub                proc_31
 seg_a:2041   sub                proc_32
-seg_a:2089   sub                proc_33
+seg_a:2089   sub                regenerate_base
 seg_a:2158   sub                proc_34
 seg_a:21D6   sub                proc_35
 seg_a:2244   sub                proc_36
@@ -128,7 +128,7 @@ seg_a:22EC   sub                proc_38
 seg_a:2305   sub, c 01          alist_readxy
 seg_a:231E   sub                add_actor       Add actor SI to list of cell BL, BH
 seg_a:2344   sub                remove_actor    Remove actor SI from the linked list
-seg_a:2379   sub                proc_41
+seg_a:2379   sub                spawn_enemy
 seg_a:24CD   sub                draw_enemies
 seg_a:26ED   sub                proc_43
 seg_a:28B8   sub                proc_44
@@ -141,10 +141,10 @@ seg_a:2A56   sub                proc_50
 seg_a:2AAF   sub                proc_51
 seg_a:2B11   sub                proc_52
 seg_a:2B6E   sub                proc_53
-seg_a:2BD4   sub                proc_54
-seg_a:2BDC   sub                proc_55
-seg_a:2BE4   sub                proc_56
-seg_a:2BEC   sub                proc_57
+seg_a:2BD4   sub                check_right
+seg_a:2BDC   sub                check_up
+seg_a:2BE4   sub                check_down
+seg_a:2BEC   sub                check_left
 seg_a:2BF4   sub                proc_58
 seg_a:2C48   sub                proc_59
 seg_a:2CBA   sub                proc_60
@@ -166,8 +166,8 @@ seg_a:0100   loc, far           start
 seg_a:0107   forced, od
 seg_a:010D   loc                                ; loc_1
 seg_a:0117   forced, od
-seg_a:011D   loc                                ; loc_2
 seg_a:011D   forced, od 0000
+seg_a:011D   loc                                ; loc_2
 seg_a:0120   forced, od seg_a
 seg_a:012A   forced, od seg_a
 seg_a:012D   loc                                ; locloop_3
@@ -482,8 +482,8 @@ seg_a:1FA6   loc                                ; loc_232
 seg_a:1FA8   loc                                ; loc_233
 seg_a:1FB0   loc                                ; loc_234
 seg_a:1FB2   loc                                ; loc_235
-seg_a:1FCB   loc                                ; loc_236
 seg_a:1FCB   forced, od seg_a
+seg_a:1FCB   loc                                ; loc_236
 seg_a:1FCE   loc                                ; loc_237
 seg_a:1FDA   loc                                ; loc_238
 seg_a:1FEA   loc                                ; loc_239
@@ -619,16 +619,16 @@ seg_a:29EC   loc                                ; loc_340
 seg_a:2A03   loc                                ; loc_341
 seg_a:2A06   loc                                ; loc_342
 seg_a:2A11   loc                                ; loc_343
-seg_a:2A14   loc                                ; loc_344
-seg_a:2A1C   loc                                ; loc_345
+seg_a:2A14   loc                    ret_31_m_ofsx
+seg_a:2A1C   loc                    ret_0
 seg_a:2A1E   loc                                ; loc_ret_346
-seg_a:2A1F   loc                                ; loc_347
-seg_a:2A28   loc                                ; loc_348
-seg_a:2A31   loc                                ; loc_349
-seg_a:2A3A   loc                                ; loc_350
-seg_a:2A41   loc                                ; loc_351
-seg_a:2A48   loc                                ; loc_352
-seg_a:2A4F   loc                                ; loc_353
+seg_a:2A1F   loc                    ret_ofsy_m_6
+seg_a:2A28   loc                    ret_32_m_ofsy
+seg_a:2A31   loc                    ret_ofsx_m_6
+seg_a:2A3A   loc                    ret_68_m_ofsx
+seg_a:2A41   loc                    ret_31_p_ofsy
+seg_a:2A48   loc                    ret_69_m_ofsy
+seg_a:2A4F   loc                    ret_30_p_ofsx
 seg_a:2A7D   loc                                ; loc_354
 seg_a:2A87   loc                                ; loc_355
 seg_a:2A89   loc                                ; loc_356
@@ -675,8 +675,8 @@ seg_a:2D1F   loc                                ; loc_396
 seg_a:2D22   loc                                ; loc_397
 seg_a:2D2E   loc                                ; loc_398
 seg_a:2D51   loc                                ; loc_399
-seg_a:2D63   loc                                ; loc_400
 seg_a:2D63   forced, od seg_a
+seg_a:2D63   loc                                ; loc_400
 seg_a:2D78   loc                                ; loc_401
 seg_a:2D88   loc                                ; loc_402
 seg_a:2D9E   loc                                ; loc_403
@@ -842,8 +842,7 @@ seg_a:15C1   dw, oln            var_134
 seg_a:15C3   dw, oln            var_135
 seg_a:15C5   db                 var_136
 seg_a:15CD   da, r 0A           var_137
-seg_a:15F2   db                 var_138
-seg_a:160C   db                 var_139
+seg_a:15F2   db, r 31           var_138
 seg_a:1752   dw, r 8            bullet_start    Start offset of the bullet depending on angle
 seg_a:19AE   dw, odn, r 4       blt_expl1x7
 seg_a:19B6   db                 blt_expl0
@@ -865,9 +864,13 @@ seg_a:1FBB   db                 var_155
 seg_a:2185   db                 box9x9flags
 seg_a:2257   db                 var_158
 seg_a:2458   db                 var_159
-seg_a:245C   dw                 var_160
-seg_a:247A   db                 var_161
-seg_a:2483   db                 var_162
+seg_a:245C   dw, odn, r 9       var_160
+seg_a:246E   db                 arr_3
+seg_a:246F   db                 arr_4
+seg_a:2472   db                 arr_5
+seg_a:2477   db                 arr_6
+seg_a:247A   db, r 9            var_161
+seg_a:2483   db, r 1F           var_162
 seg_a:24A8   db, r 25           sprite_index    (Index of each sprite (in 8 directions) in sprites_1x7) / 7
 seg_a:259D   db, r 150          sprites_1x7
 seg_a:2927   db                 var_164

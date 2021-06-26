@@ -23,6 +23,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define VERBOSE 0
+#define HACK 1
+#define HACK2 0
+#define HACK3 0
+
+#if defined(NDEBUG) && defined(VERBOSE)
+#undef VERBOSE
+#define VERBOSE 0
+#endif
+
 #define TIMER_PERIOD_US 54925
 
 enum ScanCode {
@@ -30,7 +40,13 @@ enum ScanCode {
   SC_1 = 2,
   SC_9 = 0x0A,
   SC_0 = 0x0B,
+  SC_W = 0x11,
   SC_ENTER = 0x1C,
+  SC_A = 0x1E,
+  SC_S = 0x1F,
+  SC_D = 0x20,
+  SC_X = 0x2D,
+  SC_B = 0x30,
   SC_SPACE = 0x39,
   SC_F1 = 0x3B,
   SC_F2 = 0x3C,
@@ -84,7 +100,7 @@ typedef int8_t SBOL;
 #define SBOL_Z 35
 #define SBOL_EXCL 36
 #define SBOL_SPACE 37
-#define SBOL_END -1
+#define SBOL_END (-1)
 
 #define SB(x)                                          \
   ((x) == ' '              ? SBOL_SPACE                \
@@ -177,12 +193,13 @@ static uint8_t _ext_alist_buf[2 + MAZE_HEIGHT * MAZE_WIDTH];
 /// EOL.
 /// It starts two bytes in to protect against negative indices.
 #define alist_buf (_ext_alist_buf + 2)
-/// The code relies on out of range access to maze_buf (indices -1 and -2), so
-/// we reserve two extra bytes in the beginning.
-static uint8_t _ext_maze_buf[2 + MAZE_HEIGHT * MAZE_WIDTH];
+/// The code relies on out of range access to maze_buf, so
+/// we reserve one extra row in the beginning.
+static uint8_t _ext_maze_buf[MAZE_WIDTH + MAZE_HEIGHT * MAZE_WIDTH];
 /// A 64x64 buffer. It starts two bytes in to protect against negative indices.
-#define maze_buf (_ext_maze_buf + 2)
+#define maze_buf (_ext_maze_buf + MAZE_WIDTH)
 
+static uint8_t var_182e; // 4F89h
 /// Destination segment for graphics writes.
 static unsigned dest_seg; // 4F8Ah
 /// This allows the game to control the frame rate. One frame per tick.
@@ -204,7 +221,7 @@ static int8_t ship_ofsx[NUM_ACTORS42];
 /// Offset of the ship within the cell.
 static int8_t ship_ofsy[NUM_ACTORS42];
 /// Collision flags.
-static uint8_t coll_flags1[NUM_ACTORS42];
+static uint8_t coll_flags1[NUM_ACTORS42]; // [5043h..506Dh)
 /// Unknown.
 static uint8_t var_188e[NUM_ACTORS42]; // 506Dh
 /// Unknown.
@@ -332,6 +349,7 @@ static void draw_mstrs(const SBOLDesc *strings);
 static void draw_str(unsigned offset, const SBOL *str);
 static void draw_char_1x7(unsigned offset, SBOL ch);
 static void proc_17(void);
+static bool is_actor_close(int actor);
 static void update_bullets(unsigned seg);
 static void adjust_bullets(void);
 static void shoot_bullet(unsigned actor);
@@ -367,11 +385,31 @@ static uint8_t draw_enemy_base(unsigned vidSeg, unsigned baseIndex);
 static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBits);
 static uint8_t draw_base_vert(unsigned vidSeg, int x, int y, uint8_t *pBaseBits);
 static void proc_31(unsigned vidSeg);
+static void proc_32(int baseIndex);
+static void regenerate_base(int baseIndex);
 static void proc_37(int8_t dl_x, int8_t dh_y);
 static uint8_t *alist_xy(int8_t x, int8_t y);
 static void add_actor(unsigned actor, int8_t cellX, int8_t cellY);
 static void remove_actor(unsigned actor);
+static void spawn_enemy(int baseIndex);
 static void draw_enemies(unsigned vidSeg);
+static void proc_43(void);
+static bool proc_44(
+    int exceptActor,
+    int8_t startCellY,
+    int8_t startCellX,
+    int8_t cellX,
+    int8_t cellY,
+    int8_t ofsX,
+    int8_t ofsY);
+
+typedef struct {
+  uint8_t dl;
+  uint8_t dh;
+} DLDH;
+static DLDH proc_58(int si, uint8_t dh);
+static void proc_59(int si);
+static void proc_60(void);
 static uint8_t rnd_update(uint8_t limit);
 static uint8_t rndnum(uint8_t limit);
 
@@ -423,6 +461,13 @@ static RGBA8 g_ega_palette[16] = {
 
 /// The EGA bitplanes converted to RGB here.
 static RGBA8 g_rgb_screen[EGA_WIDTH_POT * EGA_HEIGHT_POT];
+
+static inline int i_min(int a, int b) {
+  return a < b ? a : b;
+}
+static inline int i_max(int a, int b) {
+  return a > b ? a : b;
+}
 
 /// Convert the active EGA screen page to RGB into g_rgb_screen.
 static void ega_to_rgb(void) {
@@ -586,8 +631,10 @@ static AsyncResult async_start(void) {
     async_state.start.state = 1;
     // FALL
   case 1:
-    if (async_title_screen() == AS_UNWIND)
-      return AS_UNWIND;
+    if (!HACK2) {
+      if (async_title_screen() == AS_UNWIND)
+        return AS_UNWIND;
+    }
     async_state.start.state = 2;
     // FALL
   case 2:
@@ -599,8 +646,13 @@ static AsyncResult async_start(void) {
     async_state.start.state = 3;
     // FALL
   case 3:
-    if (async_edit_levdens() == AS_UNWIND)
-      return AS_UNWIND;
+    if (HACK2) {
+      level = 4;
+      density = 0;
+    } else {
+      if (async_edit_levdens() == AS_UNWIND)
+        return AS_UNWIND;
+    }
     async_state.start.state = 4;
     // FALL
   case 4:
@@ -686,7 +738,7 @@ static AsyncResult async_start(void) {
     handle_kbd();
     clr_alt_box(0 /* dest_seg ^ EGA_PAGE_SIZE */);
     update_ship();
-    // proc_43();
+    proc_43();
     adjust_bullets();
     proc_17();
     draw_maze(0);
@@ -1338,6 +1390,15 @@ static void handle_kbd(void) {
   case 68:
     // proc_11
     break;
+
+#if HACK2
+  case SC_B:
+    draw_map(ship_cellx[0], ship_celly[0]);
+    ship_cellx[0] = base_cellx[0];
+    ship_celly[0] = base_celly[0] + 1;
+    draw_map(ship_cellx[0], ship_celly[0]);
+    break;
+#endif
   }
 }
 
@@ -1433,6 +1494,20 @@ static void draw_map(unsigned shipCellX, unsigned shipCellY) {
   }
   ega_xor(vidOfs, vidMask, EGAHighCyan);
   ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighCyan);
+
+  if (HACK) {
+    // Show the bases on the map.
+    for (int i = 0; i < NUM_BASES; ++i) {
+      unsigned y = base_celly[i] + 124;
+      unsigned x = base_cellx[i] + 232;
+
+      vidOfs = vid_offset(x, y);
+      vidMask = vid_mask(x);
+
+      ega_or(vidOfs, vidMask, EGAHighRed);
+      ega_or(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighRed);
+    }
+  }
 }
 
 /// 2913:0B14                       update_fuel     proc    near
@@ -1873,13 +1948,143 @@ static void draw_bolo_8x20(unsigned offset) {
   draw_bmp(offset, bmp_bolo_8x20, 8, 20, 0xA);
 }
 
+static const uint8_t var_136[8] = {0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80};
+static const uint8_t var_137[] = {
+    0x2A, 0x28, 0x28, 0x28, 0x26, 0x26, 0x26, 0x26, 0x26, 0x24, 0x24, 0x24, 0x24,
+    0x24, 0x22, 0x22, 0x22, 0x22, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20, 0x1E, 0x1E,
+    0x1E, 0x1E, 0x1E, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1A, 0x1A, 0x1A,
+};
+static const uint8_t var_138[7 * 7] = {
+    0x08, 0x08, 0x00, 0x10, 0x00, 0x20, 0x20, 0x08, 0x08, 0x08, 0x10, 0x20, 0x20,
+    0x20, 0x00, 0x08, 0x08, 0x38, 0x20, 0x20, 0x00, 0x04, 0x04, 0x0E, 0xFF, 0xE0,
+    0x40, 0x40, 0x00, 0x02, 0x02, 0x83, 0x80, 0x80, 0x00, 0x02, 0x02, 0x02, 0x01,
+    0x80, 0x80, 0x80, 0x02, 0x02, 0x00, 0x01, 0x00, 0x80, 0x80,
+};
+
 /// 2913:1473                       proc_17         proc    near
 static void proc_17(void) {
-  // FIXME: the rest of the routine
-  if (fire_req) {
-    fire_req = 0;
-    ship_fire[0] = 2;
-    shoot_bullet(0);
+  for (int actor = NUM_ACTORS32 - 1; actor >= 0; --actor) {
+    uint8_t cflags = coll_flags1[actor];
+    if (cflags & 0x80)
+      continue;
+    if (cflags != 0 && (cflags & 0xF0) != 0x70)
+      continue;
+
+    if (ship_fire[actor] != 0) {
+      --ship_fire[actor];
+      continue;
+    }
+
+    if (actor == 0) {
+      if (fire_req != 0) {
+        fire_req = 0;
+        ship_fire[0] = 2;
+        shoot_bullet(0);
+      }
+      continue;
+    }
+
+    if (!is_actor_close(actor))
+      continue;
+    if (rndnum(var_137[ship_kind[actor]]) != 0)
+      continue;
+
+    // Relative index in the 7x7 cell area around the player.
+    int rel7x7 =
+        (ship_celly[actor] - ship_celly[0] + 3) * 7 + ship_cellx[actor] - ship_cellx[0] + 3;
+    uint8_t m1 = buf49[rel7x7];
+    if (m1 == 0)
+      continue;
+    if ((var_136[ship_angle[actor]] & var_138[rel7x7]) == 0)
+      continue;
+    uint8_t m2 = CELL_SIZE - 1 - ship_ofsy[actor] < ship_ofsx[actor] ? 6 : 9;
+    uint8_t m3 = ship_ofsx[actor] + 1 < ship_ofsy[actor] ? 0x0C : 3;
+    if (m2 & m3 & m1) {
+      ship_fire[actor] = 2;
+      shoot_bullet(actor);
+    }
+  }
+}
+
+/// 2913:152B                       proc_18         proc    near
+static bool is_actor_close(int actor) {
+  // FIXME: why not use rel_coords() here? Or simply calculate the distance?
+  if (0) {
+    return abs((ship_cellx[actor] - ship_cellx[0]) * CELL_SIZE + ship_ofsx[actor] - ship_ofsx[0]) <=
+        100 &&
+        abs((ship_celly[actor] - ship_celly[0]) * CELL_SIZE + ship_ofsy[actor] - ship_ofsy[0]) < 96;
+  }
+  if (0) {
+    XYFlag xyf =
+        rel_coords(ship_cellx[actor], ship_celly[actor], ship_ofsx[actor], ship_ofsy[actor]);
+    if (!xyf.success)
+      return false;
+    return xyf.x >= 0 && xyf.x < MAZE_SCREEN_W && xyf.y >= 0 && xyf.y < MAZE_SCREEN_H;
+  }
+
+  int hCells = ship_cellx[actor] - ship_cellx[0] + 3;
+  if (hCells < 0 || hCells >= 7)
+    return false;
+
+  int vCells = ship_celly[actor] - ship_celly[0] + 3;
+  if (vCells < 0 || vCells >= 7)
+    return false;
+
+  // How much closer are we than the cell difference.
+  int ofsx = ship_ofsx[actor] - ship_ofsx[0];
+  switch (hCells) {
+  case 0:
+    // dist <= 100
+    if (ofsx >= 14)
+      break;
+    return false;
+  case 1:
+    // dist <= 100
+    if (ofsx >= -24)
+      break;
+    return false;
+  case 2:
+  case 3:
+  case 4:
+    break;
+  case 5:
+    // dist < 101
+    if (ofsx < 25)
+      break;
+    return false;
+  case 6:
+    // dist < 101
+    if (ofsx < -13)
+      break;
+    return false;
+  default:
+    assert(false);
+    return false;
+  }
+
+  int ofsy = ship_ofsy[actor] - ship_ofsy[0];
+  switch (vCells) {
+  case 0:
+    // dist <= 83
+    return ofsy >= 31;
+  case 1:
+    // dist <= 93
+    return ofsy >= -17;
+  case 2:
+  case 3:
+  case 4:
+    return true;
+  case 5:
+    // dist < 95
+    return ofsy < 19;
+  case 6:
+    // dist < 93
+    return ofsy < -21;
+    // FIXME: originally this was:
+    // return ofsy < 0;
+  default:
+    assert(false);
+    return false;
   }
 }
 
@@ -2491,11 +2696,7 @@ static void gen_enemy_bases(void) {
   do {
     XYPtr xyp;
     for (;;) {
-      // FIXME: I had to add this loop because we ended up with negative
-      // coordinates when subtracting 4 in proc_34().
-      do {
-        xyp = maze_rnd_xy();
-      } while (xyp.x < 4 || xyp.y < 4);
+      xyp = maze_rnd_xy();
       uint8_t cellFlags = *xyp.ptr;
       if (num_walls[cellFlags] == 3)
         break;
@@ -2635,7 +2836,8 @@ static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBit
     if (x >= 0 && x < MAZE_SCREEN_W) {
       uint8_t vidBits = ega_read(vidOfs);
       ega_or(vidOfs, (uint8_t)bits, EGAHighCyan);
-      collisions |= vidBits & (uint8_t)bits;
+      vidBits &= (uint8_t)bits;
+      collisions |= vidBits;
       bits ^= vidBits;
     }
 
@@ -2643,7 +2845,8 @@ static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBit
     if (x >= 8 && x < MAZE_SCREEN_W + 8) {
       uint8_t vidBits = ega_read(vidOfs);
       ega_or(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
-      collisions |= vidBits & (uint8_t)(bits >> 8);
+      vidBits &= (uint8_t)(bits >> 8);
+      collisions |= vidBits;
       bits ^= (uint32_t)vidBits << 8;
     }
 
@@ -2651,7 +2854,8 @@ static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBit
     if (x >= 16 && x < MAZE_SCREEN_W + 16) {
       uint8_t vidBits = ega_read(vidOfs);
       ega_or(vidOfs, (uint8_t)(bits >> 16), EGAHighCyan);
-      collisions |= vidBits & (uint8_t)(bits >> 16);
+      vidBits &= (uint8_t)(bits >> 16);
+      collisions |= vidBits;
       bits ^= (uint32_t)vidBits << 16;
     }
 
@@ -2683,7 +2887,8 @@ static uint8_t draw_base_vert(unsigned vidSeg, int x, int y, uint8_t *pBaseBits)
     if (x >= 0 && x < MAZE_SCREEN_W) {
       uint8_t vidBits = ega_read(vidOfs);
       ega_or(vidOfs, (uint8_t)bits, EGAHighCyan);
-      collisions |= vidBits & (uint8_t)bits;
+      vidBits &= (uint8_t)bits;
+      collisions |= vidBits;
       bits ^= vidBits;
     }
 
@@ -2691,7 +2896,8 @@ static uint8_t draw_base_vert(unsigned vidSeg, int x, int y, uint8_t *pBaseBits)
     if (x >= 8 && x < MAZE_SCREEN_W + 8) {
       uint8_t vidBits = ega_read(vidOfs);
       ega_or(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
-      collisions |= vidBits & (uint8_t)(bits >> 8);
+      vidBits &= (uint8_t)(bits >> 8);
+      collisions |= vidBits;
       bits ^= vidBits << 8;
     }
 
@@ -2706,9 +2912,105 @@ static uint8_t draw_base_vert(unsigned vidSeg, int x, int y, uint8_t *pBaseBits)
 
 /// 2913:1FBF                       proc_31         proc    near
 static void proc_31(unsigned vidSeg) {
-  // FIXME: rest of the routine.
-  for (unsigned i = 0; i != NUM_BASES; ++i)
-    draw_enemy_base(vidSeg, i);
+  if (--var_186e == 0)
+    var_186e = NUM_ACTORS42 - 2;
+
+  int baseIndex = NUM_BASES - 1;
+  do {
+    if ((base_194e[baseIndex] & 0x80) == 0) {
+      if (base_194e[baseIndex] == 0) {
+        if (rnd_update(arr_1e[baseIndex]) == 0) {
+          ++base_194e[baseIndex];
+          spawn_enemy(baseIndex);
+        }
+      }
+
+      regenerate_base(baseIndex);
+      if (++arr_2e[baseIndex] == 64) {
+        --arr_2e[baseIndex];
+        arr_1e[baseIndex] = i_min(arr_1e[baseIndex] << 1, 0x1C);
+      }
+
+      if (draw_enemy_base(vidSeg, baseIndex) != 0)
+        arr_1e[baseIndex] = i_max(arr_1e[baseIndex] >> 1, 1);
+    } else {
+      if (base_194e[baseIndex] != 0xFF) {
+        ++base_194e[baseIndex];
+        draw_enemy_base(vidSeg, baseIndex);
+        proc_32(baseIndex);
+      }
+    }
+
+  } while (--baseIndex >= 0);
+}
+
+/// 2913:2041                       proc_32         proc    near
+static void proc_32(int baseIndex) {
+  if (rnd_update(2) != 0)
+    return;
+
+  int actor = NUM_ACTORS42;
+  while (--actor >= NUM_ACTORS32 && (coll_flags1[actor] & 0x80) == 0) {
+  }
+  if (actor < NUM_ACTORS32)
+    return;
+
+  coll_flags1[actor] = 1;
+  ship_cellx[actor] = base_cellx[baseIndex];
+  ship_celly[actor] = base_celly[baseIndex];
+  var_188e[actor] = 0xA;
+  ship_ofsx[actor] = rnd_update(32) + 3;
+  ship_ofsy[actor] = rnd_update(32) + 3;
+}
+
+/// 2913:2089                       proc_33         proc    near
+static void regenerate_base(int baseIndex) {
+  if (var_186e != NUM_ACTORS42 - 2)
+    return;
+
+  memmove(&base_bits_top[baseIndex][0], &base_bits_top[baseIndex][1], 6 * sizeof(uint16_t));
+  base_bits_top[baseIndex][6] = 0xFFFF;
+
+  memmove(&base_bits_bottom[baseIndex][1], &base_bits_bottom[baseIndex][0], 6 * sizeof(uint16_t));
+  base_bits_bottom[baseIndex][0] = 0xFFFF;
+
+  uint8_t *pLeft = &base_bits_left[baseIndex][6];
+  uint8_t *pRight = &base_bits_right[baseIndex][6];
+  uint8_t prevLeft = *pLeft;
+  *pLeft |= 1;
+  *(pLeft + 15) |= 1;
+
+  uint8_t prevRight = *pRight;
+  *pRight |= 0x40;
+  *(pRight + 15) |= 0x40;
+
+  for (int i = 0; i < 14; ++i) {
+    ++pLeft;
+    ++pRight;
+
+    uint8_t tmp = prevLeft;
+    prevLeft = *pLeft;
+    *pLeft |= (tmp | *(pLeft + 1)) & 1;
+
+    tmp = prevRight;
+    prevRight = *pRight;
+    *pRight |= (tmp | *(pRight + 1)) & 0x40;
+  }
+
+  memmove(&base_bits_left[baseIndex][0], &base_bits_left[baseIndex][1], 6 * sizeof(uint8_t));
+  memmove(&base_bits_right[baseIndex][0], &base_bits_right[baseIndex][1], 6 * sizeof(uint8_t));
+
+  memmove(&base_bits_left[baseIndex][22], &base_bits_left[baseIndex][21], 6 * sizeof(uint8_t));
+  memmove(&base_bits_right[baseIndex][22], &base_bits_right[baseIndex][21], 6 * sizeof(uint8_t));
+
+  pLeft = &base_bits_left[baseIndex][0];
+  pRight = &base_bits_right[baseIndex][0];
+  for (int i = 0; i < 28; ++i) {
+    *pLeft |= *pLeft << 1;
+    *pRight |= *pRight >> 1;
+    ++pLeft;
+    ++pRight;
+  }
 }
 
 /// Defines wall flags for a 9x9 area cell box.
@@ -2913,6 +3215,9 @@ static uint8_t *alist_xy(int8_t x, int8_t y) {
 /// Insert the specified actor at front of the list in the specified cell.
 /// 2913:231E                       add_actor         proc    near
 static void add_actor(unsigned actor, int8_t cellX, int8_t cellY) {
+  assert(cellX >= 0 && cellX < MAZE_WIDTH);
+  assert(cellY >= 0 && cellY < MAZE_HEIGHT);
+
   uint8_t *pCellList = alist_xy(cellX, cellY);
   uint8_t first = *pCellList;
 
@@ -2924,11 +3229,28 @@ static void add_actor(unsigned actor, int8_t cellX, int8_t cellY) {
   *pCellList = actor;
   prev_actor[actor] = 0;
   pactor_list[actor] = pCellList;
+
+  if (VERBOSE) {
+    printf("Add actor %u to cell %d, %d. ", actor, cellX, cellY);
+    printf("List:");
+    for (uint8_t cur = *pCellList; cur != 0; cur = next_actor[cur])
+      printf(" %d", cur);
+    printf("\n");
+  }
 }
 
 /// Remove the specified actor from the linked list.
 /// 2913:2344                       proc_40         proc    near
 static void remove_actor(unsigned actor) {
+  uint8_t *_pCellList;
+  if (VERBOSE) {
+    _pCellList = pactor_list[actor];
+    printf("Remove actor %u. \n", actor);
+    printf("PreList:");
+    for (uint8_t cur = *_pCellList; cur != 0; cur = next_actor[cur])
+      printf(" %d", cur);
+  }
+
   uint8_t next = next_actor[actor];
   if (prev_actor[actor] != 0) {
     next_actor[prev_actor[actor]] = next;
@@ -2938,6 +3260,81 @@ static void remove_actor(unsigned actor) {
   }
   if (next)
     prev_actor[next] = prev_actor[actor];
+
+  if (VERBOSE) {
+    printf(". PostList:");
+    for (uint8_t cur = *_pCellList; cur != 0; cur = next_actor[cur])
+      printf(" %d", cur);
+    printf("\n");
+  }
+}
+
+static const uint8_t var_159[4] = {2, 4, 8, 1};
+static const uint8_t arr_3[] = {0x40};
+static const uint8_t arr_4[] = {0x16, 0x2B, 0x40};
+static const uint8_t arr_5[] = {0x08, 0x18, 0x28, 0x38, 0x40};
+static const uint8_t arr_6[] = {0x18, 0x30, 0x40};
+static const uint8_t *const var_160[9] =
+    {arr_3, arr_4, arr_5, arr_5, arr_5, arr_5, arr_5, arr_5, arr_6};
+static const uint8_t var_161[9] = {0x00, 0x01, 0x04, 0x09, 0x0E, 0x13, 0x18, 0x1D, 0x22};
+static const uint8_t var_162[] = {1, 1, 2, 1, 1, 2, 1, 3, 2, 2, 1, 3, 2, 4, 1, 3, 2, 4, 3,
+                                  3, 2, 4, 3, 5, 2, 4, 3, 5, 4, 4, 3, 5, 4, 5, 5, 4, 5};
+
+/// 2913:2379                       proc_41         proc    near
+static void spawn_enemy(int baseIndex) {
+  if (HACK3) {
+    // For testing do not spawn enemies.
+    return;
+  }
+
+  int actor = NUM_ACTORS32;
+  int farthestActor = 0;
+  unsigned maxDist = 0;
+  while (--actor && (coll_flags1[actor] & 0x80) == 0) {
+    if (coll_flags1[actor] != 0)
+      continue;
+
+    unsigned dist =
+        i_max(abs(ship_cellx[0] - ship_cellx[actor]), abs(ship_celly[0] - ship_celly[actor]));
+    if (dist >= maxDist) {
+      maxDist = dist;
+      farthestActor = actor;
+    }
+  }
+
+  if (actor == 0) {
+    int diff_x = base_cellx[baseIndex] - ship_cellx[0] + 10;
+    int diff_y = base_celly[baseIndex] - ship_celly[0] + 10;
+    if (diff_x < 0 || diff_x >= 31 || diff_y < 0 || diff_y >= 31 || maxDist < 8) {
+      base_194e[baseIndex] = 0;
+      return;
+    }
+    actor = farthestActor;
+    remove_actor(actor);
+  }
+
+  ship_cellx[actor] = base_cellx[baseIndex];
+  ship_celly[actor] = base_celly[baseIndex];
+  ship_ofsx[actor] = 19;
+  ship_ofsy[actor] = 19;
+  add_actor(actor, ship_cellx[actor], ship_celly[actor]);
+
+  const uint8_t *pvar_160 = var_160[level];
+  uint8_t rndVal = rnd_update(0x40);
+  uint8_t newShipKind = 0;
+  while (*pvar_160 < rndVal) {
+    ++pvar_160;
+    ++newShipKind;
+  }
+  newShipKind += var_161[level];
+  ship_kind[actor] = newShipKind;
+  vel_magn[actor] = var_162[newShipKind];
+  do {
+    rndVal = rnd_update(4);
+  } while (base_cellfl[baseIndex] & var_159[rndVal]);
+  ship_angle[actor] = rndVal << 1;
+  coll_flags1[actor] = baseIndex | 0x50;
+  var_188e[actor] = 3;
 }
 
 /// The index of every sprite in sprites_1x7 divided by 7
@@ -3016,6 +3413,469 @@ static void draw_enemies(unsigned vidSeg) {
   }
 }
 
+static const uint8_t var_164[37] = {
+    0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1,
+};
+
+static void proc_43_inner(int actor);
+
+/// 2913:26ED                       proc_43         proc    near
+static void proc_43(void) {
+  //                mov     si,var_9e               ; (2913:0020=0)
+  for (int actor = NUM_ACTORS32; --actor;) {
+    // loc_cont:                                        ;  xref 2913:26FC, 2702, 275C, 2781
+    //
+    //                 dec     si
+    //                 jnz     loc_293
+    //                 retn
+    // loc_293:                                        ;  xref 2913:26F1
+    proc_43_inner(actor);
+  }
+}
+
+/// 2913:26ED                       proc_43         proc    near
+static void proc_43_inner(int actor) {
+  uint8_t cflags = coll_flags1[actor];
+  if (cflags & 0x80)
+    return;
+  if (cflags != 0 && (cflags & 0x60) == 0)
+    return;
+
+  uint8_t dh = 0xFF;
+  uint8_t ch = 0xFF;
+  for (;;) {
+    uint8_t dl = var_188e[actor] - vel_magn[actor];
+    //                 mov     dl,ds:var_188e[si]      ; (2913:506D=0)
+    //                 sub     dl,ds:vel_magn_e[si]    ; (2913:50B7=0)
+    //                 jns     loc_302
+    if (var_188e[actor] < vel_magn[actor]) {
+      //                test    al,70h                  ; 'p'
+      //                jz      loc_299
+      if (cflags & 0x70) {
+        unsigned di = cflags & 0x0F;
+        var_182e = di;
+        //                cmp     ds:base_194e[di],ah     ; (2913:521A=0)
+        //                js      loc_298
+        if ((base_194e[di] & 0x80) == 0) {
+          //                mov     al,bl
+          //                and     al,70h                  ; 'p'
+          //                mov     ch,al
+          ch = cflags & 0x70;
+          //                cmp     al,50h                  ; 'P'
+          //                jne     loc_297
+          if (ch == 0x50) {
+            //                mov     dl,0Eh
+            dl = 0xE;
+            //                mov     byte ptr ds:base_194e[di],2 ; (2913:521A=0)
+            base_194e[di] = 2;
+            //                nop
+            //                mov     ax,di
+            //                or      al,60h                  ; '`'
+            //                mov     ds:coll_flags1_e[si],al ; (2913:5043=0)
+            coll_flags1[actor] = di | 0x60;
+            //                jmp     short loc_302           ; (2784)
+            goto loc_302;
+          } else if (ch == 0x60) {
+            // loc_297:                                        ;  xref 2913:272E
+            //                cmp     al,60h                  ; '`'
+            //                jne     loc_298
+
+            //                mov     dl,5
+            dl = 5;
+            //                mov     ds:base_194e[di],ah     ; (2913:521A=0)
+            base_194e[di] = 0;
+            //                mov     ax,di
+            //                or      al,70h                  ; 'p'
+            //                mov     ds:coll_flags1_e[si],al ; (2913:5043=0)
+            coll_flags1[actor] = di | 0x70;
+            //                jmp     short loc_302           ; (2784)
+            goto loc_302;
+          }
+        }
+        // loc_298:                                        ;  xref 2913:2724, 2744
+        //                 mov     ds:coll_flags1_e[si],ah ; (2913:5043=0)
+        coll_flags1[actor] = 0;
+      }
+      // loc_299:                                        ;  xref 2913:2716
+      //                 test    dh,dh
+      //                 jns     loc_cont
+      if ((dh & 0x80) == 0)
+        return;
+
+      //                push    cx
+
+      //                mov     al,ds:ship_kind_e[si]   ; (2913:5097=0)
+      //                cbw
+      //                mov     bx,ax
+      //                cmp     var_164[bx],ah          ; (2913:2927=0)
+      //                jne     loc_300
+      if (var_164[ship_kind[actor]] == 0) {
+        //                call    proc_58                 ; (2BF4)
+        DLDH dldh = proc_58(actor, dh);
+        dl = dldh.dl;
+        dh = dldh.dh;
+        //                jmp     short loc_301           ; (2774)
+      } else {
+        // loc_300:                                        ;  xref 2913:276A
+        //                call    proc_60                 ; (2CBA)
+        proc_60();
+      }
+      // loc_301:                                        ;  xref 2913:276F
+
+      //                pop     cx
+
+      if (dl < vel_magn[actor]) {
+        var_188e[actor] = dl;
+        return;
+      }
+    }
+  loc_302:;
+
+    int8_t bl_cellx = ship_cellx[actor];
+    int8_t bh_celly = ship_celly[actor];
+    int8_t dl_x = ship_ofsx[actor];
+    int8_t dh_y = ship_ofsy[actor];
+
+    StepXY sxy = step_xy[vel_magn[actor]][ship_angle[actor]];
+    int8_t changedCell = -1;
+
+    if ((dl_x += sxy.x) >= 0) {
+      if (dl_x >= CELL_SIZE) {
+        dl_x -= CELL_SIZE;
+        ++bl_cellx;
+        ++changedCell;
+      }
+    } else {
+      dl_x += CELL_SIZE;
+      --bl_cellx;
+      ++changedCell;
+    }
+
+    if ((dh_y += sxy.y) >= 0) {
+      if (dh_y >= CELL_SIZE) {
+        dh_y -= CELL_SIZE;
+        ++bh_celly;
+        ++changedCell;
+      }
+    } else {
+      dh_y += CELL_SIZE;
+      --bh_celly;
+      ++changedCell;
+    }
+
+    if (changedCell >= 0) {
+      remove_actor(actor);
+      add_actor(actor, bl_cellx, bh_celly);
+    }
+
+    if (HACK) {
+      if (bh_celly < 3 || bh_celly > 61 || bl_cellx < 1 || bl_cellx > 62)
+        goto loc_318;
+    }
+
+    if (proc_44(actor, bl_cellx, bh_celly, bl_cellx, bh_celly, dl_x, dh_y))
+      goto loc_318;
+
+    int8_t xCheck = dl_x < 6 ? 1 : (dl_x >= 32 ? -1 : 0);
+    if (xCheck && proc_44(actor, bl_cellx - xCheck, bh_celly, bl_cellx, bh_celly, dl_x, dh_y))
+      goto loc_318;
+
+    int8_t yCheck = dh_y < 6 ? 1 : (dh_y >= 32 ? -1 : 0);
+    if (yCheck) {
+      if (proc_44(actor, bl_cellx, bh_celly - yCheck, bl_cellx, bh_celly, dl_x, dh_y))
+        goto loc_318;
+      if (xCheck &&
+          proc_44(actor, bl_cellx - xCheck, bh_celly - yCheck, bl_cellx, bh_celly, dl_x, dh_y))
+        goto loc_318;
+    }
+
+    ship_cellx[actor] = bl_cellx;
+    ship_celly[actor] = bh_celly;
+    ship_ofsx[actor] = dl_x;
+    ship_ofsy[actor] = dh_y;
+
+    var_188e[actor] = dl;
+    return;
+
+  loc_318:
+    bl_cellx = ship_cellx[actor];
+    bh_celly = ship_celly[actor];
+    if (changedCell >= 0) {
+      remove_actor(actor);
+      add_actor(actor, bl_cellx, bh_celly);
+    }
+
+    if (++dh != 0)
+      return;
+
+    if ((coll_flags1[actor] & 0x70) != 0)
+      break;
+
+    var_188e[actor] = 0;
+    proc_59(actor);
+  }
+  // loc_320:                                        ;  xref 2913:288A
+
+  //                 test    ch,ch
+  //                 js      loc_cont
+  if (ch & 0x80)
+    return;
+  //                 mov     al,ds:var_182e          ; (2913:4F89=0)
+  //                 or      al,ch
+  //                 mov     ds:coll_flags1_e[si],al ; (2913:5043=0)
+  coll_flags1[actor] = var_182e | ch;
+  //                 cmp     ch,60h                  ; '`'
+  //                 jne     loc_cont
+  if (ch != 0x60)
+    return;
+  //                 mov     al,ds:var_182e          ; (2913:4F89=0)
+  //                 cbw
+  //                 mov     di,ax
+  //                 mov     byte ptr ds:base_194e[di],2 ; (2913:521A=0)
+  base_194e[var_182e] = 2;
+
+  //                 nop
+  //                 jmp     short loc_cont           ; (2868)
+}
+
+/// 2913:28B8                       proc_44         proc    near
+static bool proc_44(
+    int exceptActor,
+    int8_t startCellY,
+    int8_t startCellX,
+    int8_t cellX,
+    int8_t cellY,
+    int8_t ofsX,
+    int8_t ofsY) {
+  for (int actor = *alist_xy(startCellY, startCellX); actor != 0; actor = next_actor[actor]) {
+    if (actor == exceptActor)
+      continue;
+
+    int from, to;
+    if (coll_flags1[actor] == 1 || (coll_flags1[actor] & 0x70) == 0x10) {
+      from = 14;
+      to = 27;
+    } else {
+      from = 7;
+      to = 15;
+    }
+
+    int tmp = cellX < ship_cellx[actor] ? -CELL_SIZE : cellX == ship_cellx[actor] ? 0 : CELL_SIZE;
+    tmp = tmp + ofsX - ship_ofsx[actor] + from;
+    if (tmp < 0 || tmp >= to)
+      continue;
+
+    tmp = cellY < ship_celly[actor] ? -CELL_SIZE : cellY == ship_celly[actor] ? 0 : CELL_SIZE;
+    tmp = tmp + ofsY - ship_ofsy[actor] + from;
+    if (tmp < 0 || tmp >= to)
+      continue;
+
+    return true;
+  }
+
+  return false;
+}
+
+/// 2913:2BD4                       proc_54         proc    near
+static inline bool check_right(const uint8_t *pCell) {
+  return (*pCell & W_R) || (0x80 & *(pCell + 1));
+}
+
+/// 2913:2BDC                       proc_55         proc    near
+static inline bool check_up(const uint8_t *pCell) {
+  return (*pCell & W_T) || (0x80 & *(pCell - MAZE_STRIDE));
+}
+
+/// 2913:2BE4                       proc_56         proc    near
+static inline bool check_down(const uint8_t *pCell) {
+  return (*pCell & W_B) || (0x80 & *(pCell + MAZE_STRIDE));
+}
+
+/// 2913:2BEC                       proc_57         proc    near
+static inline bool check_left(const uint8_t *pCell) {
+  return (*pCell & W_L) || (0x80 & *(pCell - 1));
+}
+
+/// 2913:294C                       proc_45         proc    near
+static uint8_t proc_45(int actor) {
+  uint8_t *pCell = maze_xy(ship_cellx[actor], ship_celly[actor]);
+  uint8_t cflags1;
+
+  switch (ship_angle[actor]) {
+  case 0:
+    // 2913:2980                       proc_46         proc    near
+    if (!check_up(pCell)) {
+      if (ship_ofsx[actor] >= 4) {
+        if (ship_ofsx[actor] < 33 || (*(pCell - MAZE_STRIDE + 1) & 0x89) == 0)
+          return ship_ofsy[actor] + 31;
+      } else {
+        if ((*(pCell - MAZE_STRIDE - 1) & 0x8C) == 0)
+          return ship_ofsy[actor] + 31;
+      }
+    }
+    return i_max(0, ship_ofsy[actor] - 6);
+  case 1:
+    // 2913:2A56                       proc_50         proc    near
+    cflags1 = *(pCell - MAZE_STRIDE + 1);
+    if (CELL_SIZE - 1 - ship_ofsy[actor] >= ship_ofsx[actor]) {
+      if (check_up(pCell))
+        return i_max(0, ship_ofsy[actor] - 6);
+      if (cflags1 & 0x81)
+        return i_max(0, 31 - ship_ofsx[actor]);
+      if (29 - ship_ofsy[actor] < ship_ofsx[actor] && ((cflags1 & 8) || check_right(pCell))) {
+        return i_max(0, 31 - ship_ofsx[actor]);
+      }
+      return 31 + ship_ofsy[actor];
+    }
+    if (check_right(pCell))
+      return i_max(0, 31 - ship_ofsx[actor]);
+    if (cflags1 & 0x88)
+      return i_max(0, ship_ofsy[actor] - 6);
+    if (44 - ship_ofsy[actor] >= ship_ofsx[actor] && ((cflags1 & 0x81) || check_up(pCell)))
+      return i_max(0, ship_ofsy[actor] - 6);
+    return 68 - ship_ofsx[actor];
+  case 2:
+    // 2913:29A5                       proc_47:
+    if (!check_right(pCell)) {
+      if (ship_ofsy[actor] >= 5) {
+        if (ship_ofsy[actor] < 34 || (*(pCell + MAZE_STRIDE + 1) & 0x83) == 0)
+          return 68 - ship_ofsx[actor];
+      } else {
+        if ((*(pCell - MAZE_STRIDE + 1) & 0x89) == 0)
+          return 68 - ship_ofsx[actor];
+      }
+    }
+    return i_max(0, 31 - ship_ofsx[actor]);
+  case 3:
+    // 2913:2AAF                       proc_51         proc    near
+    cflags1 = *(pCell + MAZE_STRIDE + 1);
+    if (ship_ofsx[actor] + 1 >= ship_ofsy[actor]) {
+      if (check_right(pCell))
+        return i_max(0, 31 - ship_ofsx[actor]);
+      if (cflags1 & 0x82)
+        return i_max(0, 32 - ship_ofsy[actor]);
+      if (ship_ofsx[actor] - 7 < ship_ofsy[actor] && ((cflags1 & 1) || check_down(pCell))) {
+        return i_max(0, 32 - ship_ofsy[actor]);
+      }
+      return 68 - ship_ofsx[actor];
+    }
+    if (check_down(pCell))
+      return i_max(0, 32 - ship_ofsy[actor]);
+    if (cflags1 & 0x81)
+      return i_max(0, 31 - ship_ofsx[actor]);
+    if (ship_ofsy[actor] - 9 < ship_ofsx[actor] && ((cflags1 & 2) || check_right(pCell))) {
+      return i_max(0, 31 - ship_ofsx[actor]);
+    }
+    return 69 - ship_ofsy[actor];
+  case 4:
+    // 2913:29CA                       proc_48:
+    if (!check_down(pCell)) {
+      if (ship_ofsx[actor] >= 4) {
+        if (ship_ofsx[actor] < 33 || (*(pCell + MAZE_STRIDE + 1) & 0x83) == 0)
+          return 69 - ship_ofsy[actor];
+      } else {
+        if ((*(pCell + MAZE_STRIDE - 1) & 0x86) == 0)
+          return 69 - ship_ofsy[actor];
+      }
+    }
+    return i_max(0, 32 - ship_ofsy[actor]);
+  case 5:
+    // 2913:2B11                       proc_52         proc    near
+    cflags1 = *(pCell + MAZE_STRIDE - 1);
+    if (CELL_SIZE - 1 - ship_ofsy[actor] >= ship_ofsx[actor]) {
+      if (check_left(pCell))
+        return i_max(0, ship_ofsx[actor] - 6);
+      if (cflags1 & 0x82)
+        return i_max(0, 32 - ship_ofsy[actor]);
+      if (29 - ship_ofsy[actor] < ship_ofsx[actor] && ((cflags1 & 4) || check_down(pCell))) {
+        return i_max(0, 32 - ship_ofsy[actor]);
+      }
+      return 30 + ship_ofsx[actor];
+    }
+    if (check_down(pCell))
+      return i_max(0, 32 - ship_ofsy[actor]);
+    if (cflags1 & 0x84)
+      return i_max(0, ship_ofsx[actor] - 6);
+    if (44 - ship_ofsy[actor] >= ship_ofsx[actor] && ((cflags1 & 2) || check_left(pCell))) {
+      return i_max(0, ship_ofsx[actor] - 6);
+    }
+    return 69 - ship_ofsy[actor];
+  case 6:
+    // 2913:29EF                       proc_49:
+    if (!check_left(pCell)) {
+      if (ship_ofsy[actor] >= 5) {
+        if (ship_ofsy[actor] < 34 || (*(pCell + MAZE_STRIDE - 1) & 0x86) == 0)
+          return 30 + ship_ofsx[actor];
+      } else {
+        if ((*(pCell - MAZE_STRIDE - 1) & 0x8C) == 0)
+          return 30 + ship_ofsx[actor];
+      }
+    }
+    return i_max(0, ship_ofsx[actor] - 6);
+  case 7:
+    // 2913:2B6E                       proc_53         proc    near
+    cflags1 = *(pCell - MAZE_STRIDE - 1);
+    if (ship_ofsx[actor] + 1 >= ship_ofsy[actor]) {
+      if (check_up(pCell))
+        return i_max(0, ship_ofsy[actor] - 6);
+      if (cflags1 & 0x84)
+        return i_max(0, ship_ofsx[actor] - 6);
+      if (ship_ofsx[actor] - 7 < ship_ofsy[actor] && ((cflags1 & 8) || check_left(pCell))) {
+        return i_max(0, ship_ofsx[actor] - 6);
+      }
+      return 31 + ship_ofsy[actor];
+    }
+    if (check_left(pCell))
+      return i_max(0, ship_ofsx[actor] - 6);
+    if (cflags1 & 0x88)
+      return i_max(0, ship_ofsy[actor] - 6);
+    if (ship_ofsy[actor] - 9 < ship_ofsx[actor] && ((cflags1 & 4) || check_up(pCell))) {
+      return i_max(0, ship_ofsy[actor] - 6);
+    }
+    return 30 + ship_ofsx[actor];
+  }
+  assert(false);
+  return 0;
+}
+
+/// 2913:2BF4                       proc_58         proc    near
+static DLDH proc_58(int si, uint8_t dh) {
+  uint8_t p45res = proc_45(si);
+  uint8_t angle = ship_angle[si];
+
+  uint8_t limit = p45res >= vel_magn[si] ? 8 : 2;
+  do {
+    uint8_t rndVal = rnd_update(limit);
+    if (rndVal < 2) {
+      // 0 -> subtract, 1 -> increment.
+      angle += (rndVal << 1) - 1;
+      ship_angle[si] = angle & 7;
+
+      ++dh;
+      p45res = proc_45(si);
+    }
+
+    if (p45res >= vel_magn[si]) {
+      return (DLDH){.dl = rndnum(p45res - vel_magn[si]) + 1 + vel_magn[si], .dh = dh};
+    }
+    limit = 2;
+  } while (dh & 80);
+
+  return (DLDH){.dl = p45res, .dh = dh};
+}
+
+/// 2913:2C48                       proc_59         proc    near
+static void proc_59(int si) {
+  ship_angle[si] = (ship_angle[si] + (rnd_update(2) << 1) - 1) & 7;
+  var_188e[si] = rndnum(proc_45(si));
+}
+
+/// 2913:2CBA                       proc_60         proc    near
+static void proc_60(void) {
+  // FIXME: implement.
+}
+
 /// Return a pseudo random value in the range [0..power-of-two).
 /// \param limit must be a power of 2. It is used to mask the result.
 /// The random generator state is updated.
@@ -3082,7 +3942,7 @@ static XYPtr maze_rnd_xy() {
 /// 2913:2F3C                       maze_readxy     proc    near
 static uint8_t *maze_xy(int8_t x, int8_t y) {
   int ofs = y * MAZE_WIDTH + x;
-  assert(ofs >= -2);
+  assert(ofs >= -MAZE_WIDTH);
   return maze_buf + ofs;
 }
 
@@ -3577,6 +4437,19 @@ static uint8_t to_scan_code(sapp_keycode keycode) {
     return SC_UP;
   case SAPP_KEYCODE_DOWN:
     return SC_DOWN;
+
+  case SAPP_KEYCODE_W:
+    return SC_W;
+  case SAPP_KEYCODE_A:
+    return SC_A;
+  case SAPP_KEYCODE_S:
+    return SC_S;
+  case SAPP_KEYCODE_D:
+    return SC_D;
+  case SAPP_KEYCODE_X:
+    return SC_X;
+  case SAPP_KEYCODE_B:
+    return SC_B;
   default:
     break;
   }
