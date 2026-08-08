@@ -51,4 +51,46 @@ typedef struct RGBA8 {
   uint8_t r, g, b, a;
 } RGBA8;
 
+/// Must be called once before any other bolo_* function.
+///
+/// Aborts if called twice. The game's state lives in file-scope statics that
+/// the C runtime initializes once at program start, so a second run in the
+/// same process would silently inherit the first run's state. Use a new
+/// process (or fork()) per run.
+void bolo_reset(void);
+
+/// Deliver one timer interrupt, as the original's INT 08h handler did.
+void bolo_timer_tick(void);
+
+/// Run one slice of the game's async state machine, returning when it yields.
+void bolo_step(void);
+
+/// bolo_timer_tick() followed by `pump` calls to bolo_step().
+///
+/// The gameplay loop is gated on the timer tick, so any `pump >= 1` produces
+/// identical gameplay; larger values only advance the non-tick-gated intro
+/// states (title screen, maze generation) faster. The windowed app effectively
+/// uses ~3-4, being a 60Hz render loop over an 18.2Hz tick.
+void bolo_run_tick(int pump);
+
+/// Deliver a key, as the original's INT 09h handler did.
+void bolo_key(uint8_t scanCode);
+
+/// EGA_PAGE_VISIBLE bytes of the completed frame for `plane` (0..3).
+const uint8_t *bolo_plane(int plane);
+
+/// The 16 EGA colors.
+const RGBA8 *bolo_palette(void);
+
+/// Number of completed gameplay frames.
+///
+/// Incremented where the game consumes a tick at its frame gate, which is the
+/// point at which the original calls flip_vp. Intro screens never reach that
+/// gate, so this stays 0 until gameplay begins.
+unsigned bolo_frame_count(void);
+
+/// Called when the game requests a sound, carrying the original's PC speaker
+/// loop delay and length. NULL (the default) discards sounds.
+extern void (*bolo_sound_sink)(int ch_delay, int cl_length);
+
 #endif // BOLO_H

@@ -6,3 +6,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_subdirectory(src)
+
+if (NOT EMSCRIPTEN)
+  enable_testing()
+  add_subdirectory(emu)
+endif ()
