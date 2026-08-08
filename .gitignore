@@ -1,6 +1,8 @@
 debug/
 release/
+build/
 cmake-build*/
+.superpowers/
 .idea/
 .DS_Store
 embuild/
