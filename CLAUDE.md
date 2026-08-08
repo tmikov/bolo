@@ -19,20 +19,18 @@ preserve the original's semantics (including its overflow and aliasing behavior)
 
 There is no test suite, no linter config beyond `.clang-format`, and no CI.
 
-**Native (macOS only as currently configured).** `src/CMakeLists.txt` builds `sokol.m` and links
-Cocoa/QuartzCore/OpenGL/AudioToolbox for any non-Emscripten target, so a Linux/Windows native
-build does not work out of the box (`bolo.c` itself compiles fine; `sokol.m` is what fails).
-Supporting Linux would mean switching to `sokol.c` and X11/GL libs.
+**Native (macOS and Linux).**
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ```
 
-**Syntax-check the game on any platform** — useful on Linux, where the full link fails:
-
-```sh
-clang -fsyntax-only -std=c11 -DSOKOL_GLCORE33 src/bolo.c
-```
+`src/CMakeLists.txt` has three branches — Emscripten, `APPLE`, and everything else. macOS compiles
+`sokol.m` (the sokol headers are Objective-C there) and links Cocoa/QuartzCore/OpenGL/AudioToolbox.
+Linux compiles `sokol.c` and needs `libx11-dev libxi-dev libxcursor-dev libgl-dev libasound2-dev`;
+CMake reports which one is missing at configure time. Both use `SOKOL_GLCORE33` — sokol_app only
+supports GL on Linux. `-pthread` comes from `Threads::Threads` and is mandatory: sokol_app.h calls
+`pthread_attr_init` purely so that omitting it becomes a link error rather than a runtime mystery.
 
 **Wasm.** The Emscripten branch of `src/CMakeLists.txt` sets `SOKOL_GLES2`, an `.html` suffix, and
 `--shell-file src/shell.html`; `.gitignore` lists `embuild/`, so the build directory was
