@@ -277,11 +277,24 @@ from any build directory.
 
 ## Known limitations
 
-- **One run per process.** `bolo.c`'s globals rely on static initializers, so a faithful
-  `bolo_reset()` means restoring ~40 variables — mechanical, long, and certain to rot as
-  state is added. `bolo_reset()` aborts if called twice; the CLI runs a single trace per
-  invocation. If many runs per process are ever wanted, `fork()` per run is cheaper and
-  safer than a reset function.
+- **One run per process.** `bolo.c`'s state lives in file-scope statics initialized once at
+  program start. Measured from the object file, that is 7 non-zero-initialized symbols
+  (`strb_score`, `rnd_state`, `lsel_mstr`, `strb_hisco`, `reckey_delay`, `reckey_offset`,
+  `g_ega_palette`; 311 bytes total) plus zero-initialized state that, once the shell is
+  extracted, is `g_ega_screen` and the game arrays — roughly 75KB.
+
+  A hand-written `bolo_reset()` would therefore be short (~30 lines), but the objection is
+  silent drift, not size: a global added later with an initializer and not mirrored into
+  the reset makes run 2 differ from run 1 with nothing to announce it, corrupting exactly
+  the measurement this tool produces. So `bolo_reset()` aborts if called twice and the CLI
+  runs one trace per invocation. If multiple runs per invocation are ever wanted, `fork()`
+  per run is the answer — the OS snapshots everything including state nobody enumerated,
+  it is ~15 lines, and drift becomes impossible. The interpreter side needs none of this;
+  its state is one struct, reset by `memset` plus reloading `BOLO.COM`.
+
+  Scope note: the initial deliverable needs a single run. The attract demo is one canonical
+  scenario — `reckeys` opens with `0x0306` (scancode 6, `'5'`, after a 3-tick delay), so the
+  recorded script types its own level and density selection.
 - **The port will diverge early at first.** It is incomplete, carries `HACK`/`HACK2`/`HACK3`
   toggles, and has `flip_vp` disabled. Early divergence is the expected starting state, and
   the baseline number is the thing that improves.
