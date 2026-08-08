@@ -94,19 +94,40 @@ extern void (*bolo_sound_sink)(int ch_delay, int cl_length);
 PC-speaker semantic — loop delay and duration — so the seam yields the right sound
 artifact as a by-product rather than as extra machinery.
 
-**`bolo_run_tick()` exposes a real divergence.** In the shipping app `async_start()` is
-called once per rendered frame (~60Hz) while ticks arrive at 18.2Hz, so roughly 3-4 calls
-per tick. Tick-gated states do not care, but progress through *non*-tick-gated states
-(title screen, maze generation) is frame-rate dependent, whereas the original does all of
-it synchronously within one tick. So:
+**`bolo_run_tick()` pumping.** In the shipping app `async_start()` is called once per
+rendered frame (~60Hz) while ticks arrive at 18.2Hz, so roughly 3-4 calls per tick. Of the
+13 `return AS_UNWIND` sites, all but one are tick-gated and therefore self-limiting; the
+sole plain yield is `async_init_maze` state 0, which draws the GENERATING MAZE bitmap and
+unwinds so the message appears before generation runs.
+
+This does not affect the comparison, for two reasons:
+
+- **Gameplay is already tick-locked.** Case 12 is a hard gate. The first call after a tick
+  advances runs exactly one iteration (case 9 -> 11 -> 12) and returns with state 12; every
+  later call that tick re-enters at case 12 and returns immediately. Extra calls are exact
+  no-ops — including `handle_kbd` -> `getkey` -> `--reckey_delay`, so recorded demo input is
+  consumed once per tick, not once per frame.
+- **The intro is never compared.** `flip_vp` has one call site, inside the gameplay loop.
+  Title screen, level select and maze generation produce no flips; they draw straight to
+  visible page 0. Capture triggers on `029A`, so comparison starts at the first gameplay
+  frame. Maze generation is synchronous in the port too — `async_gen_maze`'s `for(;;)` runs
+  to completion in one call, matching the original.
+
+So:
 
 ```c
 int_08h_entry();
-do { async_start(); } while (last_tick != time_tick && --guard);
+for (int i = 0; i < pump; ++i) async_start();
 ```
 
-Pump until the port consumes the tick at case 12. Deterministic, and closer to the
-original than the shipping app is — that gap is itself a bug the harness will reveal.
+`pump` defaults to 4 (the app's ~60/18.2 ratio), exposed as `--pump N`. During gameplay any
+`N >= 1` is byte-identical; in the intro `N` only changes how many ticks pass before
+gameplay begins. A test asserts this: the same trace at `--pump 1` and `--pump 8` must
+produce identical output.
+
+Note: an earlier draft proposed pumping until `last_tick == time_tick`. That is wrong —
+`last_tick` is assigned only in case 12, which is reached only during gameplay, so the loop
+would spin until its guard expired on every intro tick.
 
 ### B. `emu/i8086.[ch]` — the CPU
 
@@ -156,7 +177,9 @@ audio comparison would bring cycle accounting back. Consistent with screen-level
 2. Run free. The original checks memory/EGA, seeds `rnd_state`, hooks INT 08h/09h, sets
    mode 0Dh, and shows the title screen. All nondeterministically seeded and irrelevant —
    no keys are injected, so it times out into the attract demo.
-3. **Begin comparing at `018Bh`.** Both sides now hold identical deterministic state.
+3. **Arm the harness at `018Bh`.** Both sides now hold identical deterministic state.
+   No captures happen yet: the intro phases produce no `flip_vp` calls, so the first
+   captured frame is the first gameplay frame.
 
 ### Capture and comparison
 
@@ -214,7 +237,9 @@ with "guest never reached `028E`". The port side gets the matching guard in
    shifts), document the choice; if BOLO depends on it, the screen diff surfaces it.
 3. **Golden trace of the interpreter itself.** Once the original runs, commit its first N
    frames so interpreter refactors cannot silently change behavior, independent of the port.
-4. **The thing itself.** The original must reach the title screen and demo and render
+4. **Pump invariance.** The same trace run at `--pump 1` and `--pump 8` must produce
+   identical output, asserting that the port's gameplay loop is frame-rate independent.
+5. **The thing itself.** The original must reach the title screen and demo and render
    recognizable BOLO. Eyeball the PPMs once; the golden trace locks it thereafter.
 
 Plain assert-based C programs under CTest (`enable_testing()` + `add_test`) — no
