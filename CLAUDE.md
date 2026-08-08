@@ -25,6 +25,10 @@ There is no test suite, no linter config beyond `.clang-format`, and no CI.
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ```
 
+**Headless.** `emu/bolotest` runs the attract demo with no window and writes one PPM per
+completed frame: `./build/emu/bolotest --frames 100 --out /tmp/frames`. `ctest` from the build
+directory runs the harness tests. Excluded from the Emscripten build.
+
 `src/CMakeLists.txt` has three branches — Emscripten, `APPLE`, and everything else. macOS compiles
 `sokol.m` (the sokol headers are Objective-C there) and links Cocoa/QuartzCore/OpenGL/AudioToolbox.
 Linux compiles `sokol.c` and needs `libx11-dev libxi-dev libxcursor-dev libgl-dev libasound2-dev`;
@@ -49,8 +53,10 @@ Don't modify them.
 
 ## Architecture
 
-`src/bolo.c` (~4.5k lines) is the entire game in one translation unit; `sokol.c`/`sokol.m` exist
-only to instantiate `SOKOL_IMPL`.
+`src/bolo.c` (~4.3k lines) is the entire game logic in one translation unit, built as the
+`bologame` static library and driven through `src/bolo.h`. `src/shell_sokol.c` is the windowed
+front end (rendering, audio, keyboard); `emu/bolotest.c` is the headless one. `sokol.c`/`sokol.m`
+exist only to instantiate `SOKOL_IMPL`.
 
 ### Frame loop and DOS interrupt emulation
 
