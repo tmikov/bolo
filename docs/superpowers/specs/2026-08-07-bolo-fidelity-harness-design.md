@@ -81,7 +81,7 @@ has no sokol dependency and links standalone.
 
 ```c
 void bolo_reset(void);
-void bolo_run_tick(void);              /* one timer tick, pumped to the frame gate */
+void bolo_run_tick(int pump);           /* one timer tick, then `pump` async_start calls */
 void bolo_key(uint8_t scancode);       /* == int_09h_entry */
 const uint8_t *bolo_plane(int plane);  /* 8000 bytes of the completed frame; page 0,
                                           since the port pins dest_seg to 0 */
@@ -219,10 +219,13 @@ fix:
 unimplemented opcode D5h at 2913:1A2C: "aad 0Ah"  (BOLO.LST:3421)
 ```
 
-Same for an unhandled port, `INT` vector, or BIOS function. Two runaway guards: the guest
-executing outside the loaded image aborts, and a per-frame instruction budget (~5M) aborts
-with "guest never reached `028E`". The port side gets the matching guard in
-`bolo_run_tick`'s pump loop.
+Same for an unhandled port, `INT` vector, or BIOS function. Two runaway guards on the
+interpreter: the guest executing outside the loaded image aborts, and a per-frame
+instruction budget (~5M) aborts with "guest never reached `028E`". The port side needs no
+guard — `bolo_run_tick` pumps a fixed count, so it cannot spin.
+
+The harness also aborts if the port stops producing frames while the original keeps
+going (or the reverse), rather than silently comparing a stale buffer.
 
 ## Testing the harness
 
