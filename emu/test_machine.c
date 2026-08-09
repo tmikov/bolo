@@ -165,6 +165,18 @@ int main(void) {
     OUT16(0x3D4, 0x200C);
     expect_u8("display page 1", (uint8_t)machine_display_page(m), 1);
 
+    // The page the guest draws into is the complement of the one dest_seg_e
+    // (2913:4F8A) names. dest_seg_e is what flip_vp hands the CRTC, i.e. the
+    // page about to be *shown*, which still holds the previous frame;
+    // clr_alt_box at 2913:04CF loads ES from dest_seg_e XOR 0200h and returns
+    // without restoring it, so every draw routine for the rest of the frame
+    // writes the other page. Getting this backwards makes every captured frame
+    // one frame stale, which is invisible in a single screenshot.
+    c->write8(ctx, i8086_linear(MACHINE_LOAD_SEG, 0x4F8B), 0xA0);
+    expect_u8("draw page when dest_seg_e is A000h", (uint8_t)machine_draw_page(m), 1);
+    c->write8(ctx, i8086_linear(MACHINE_LOAD_SEG, 0x4F8B), 0xA2);
+    expect_u8("draw page when dest_seg_e is A200h", (uint8_t)machine_draw_page(m), 0);
+
     // 3DAh bit 3 reads as always set, so flip_vp's retrace spin exits at once.
     if (!(c->in8(ctx, 0x3DA) & 0x08)) {
       fprintf(stderr, "FAIL: 3DAh bit 3 must read set\n");

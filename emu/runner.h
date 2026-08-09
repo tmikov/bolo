@@ -22,8 +22,32 @@
 /// screen spins on time_tick at 2913:11E5 (3 instructions) and gameplay spins
 /// on it at 2913:028E (3 instructions), both reading only. Firing at a single
 /// hardcoded address would leave the other one hung forever, so the rule is
-/// generic: 64 consecutive instructions that store nothing means idle. No real
-/// work loop in this program runs that long without writing memory or a port.
+/// generic: 64 consecutive instructions that store nothing means idle.
+///
+/// Being generic, it is also approximate, and the approximation is measured
+/// rather than assumed. Over one full attract demo -- 8,427,012 instructions,
+/// 441 frames, ending at the guest's own INT 20h -- 8,625 ticks are delivered,
+/// of which only about 425 are at the two wait loops. The other ~8,200 land in
+/// pure-read *work* loops that happen to run 64 instructions without a store:
+/// update_hisco's compare loop at 2913:1D20, and stretches of draw_maze
+/// (2913:059E, 05D2, 05D9), do_explosions (2913:1C7C, 1CAC) and draw_enemies
+/// (2913:24D6, 2535). So time_tick runs roughly 21 counts per frame here
+/// instead of the ~1 real hardware would give -- visible in
+/// emu/golden-original.txt, where frame 0 is tick 83h and frame 1 is 98h.
+///
+/// That is safe, and the reason is a property of the binary, not of this
+/// detector: no game state is ever derived from time_tick's value. Every read
+/// of it is either change detection (2913:028E gates a frame on
+/// "time_tick != last_tick", by inequality, not by how far apart they are) or a
+/// relative deadline (2913:01B9, 0215, 0B6D, 11D9, 12EF each compute
+/// time_tick + N and then spin at 01BE, 021A, 0B72, 11EB, 12F4 until it is
+/// reached). Since 2913:02C8 increments by exactly one per delivery, an
+/// equality deadline is still hit exactly; the wait simply completes after N
+/// idle gaps instead of N timer periods. Only 2913:12DB copies time_tick
+/// anywhere (into time_5bit_e), and that runs once, before the sync point.
+///
+/// If a comparison ever diverges in a way that correlates with tick counts,
+/// this is the first knob to suspect.
 #define IDLE_THRESHOLD 64
 
 /// Instructions to run in one frame before declaring the guest hung. BOLO does

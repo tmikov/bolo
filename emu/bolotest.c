@@ -99,8 +99,14 @@ run_original(const char *dir, long frames, const char *goldenPath, const char *c
 
   // Everything before the sync point is the title screen and the level
   // editor replaying recorded keys; the demo proper starts here.
-  if (runner_run_to_sync(r) != RUN_SYNCED) {
-    fprintf(stderr, "the original never reached its sync point: %s\n", runner_error(r));
+  // RUN_EXITED leaves no error message, so it needs its own text: passing the
+  // NULL from runner_error() to %s would be undefined.
+  RunResult sync = runner_run_to_sync(r);
+  if (sync != RUN_SYNCED) {
+    fprintf(
+        stderr,
+        "the original never reached its sync point: %s\n",
+        sync == RUN_EXITED ? "it exited" : runner_error(r));
     runner_destroy(r);
     return 1;
   }
