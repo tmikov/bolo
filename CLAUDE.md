@@ -69,7 +69,7 @@ exist only to instantiate `SOKOL_IMPL`.
    `int_08h_entry()` per step — the DOS timer interrupt, which just increments `time_tick`.
    Game code paces itself by comparing against `time_tick`, exactly as the original did.
 2. `async_start()` — one slice of the game (see below).
-3. `bolo_update_screen()` → `ega_to_rgb()` → `sg_update_image` → fullscreen textured quad drawn
+3. `bolo_update_screen()` → `ega_screen_to_rgba()` → `sg_update_image` → fullscreen textured quad drawn
    with the `blit` shader into an aspect-preserving viewport.
 
 Keyboard input goes `sapp_event` → `to_scan_code()` → `int_09h_entry()`, i.e. it is converted to
@@ -108,8 +108,11 @@ there.
   original's segment register. Page flipping is wired up (`ega_set_page`, `g_ega_page`) but
   currently pinned to page 0, and several draw routines write both pages explicitly by adding
   `EGA_PAGE_SIZE`.
-- `ega_to_rgb()` unpacks the active page's four planes into `g_rgb_screen` (padded to
-  `EGA_WIDTH_POT` x `EGA_HEIGHT_POT` for the texture) through the 16-entry `g_ega_palette`.
+- `src/ega_render.c` unpacks planes into RGBA through the 16-entry palette, and is the only
+  copy of that logic: `ega_row_to_rgba()` does one row, `ega_screen_to_rgba()` does the screen
+  at a caller-chosen stride. The shell renders at `EGA_WIDTH_POT` stride (leaving the texture's
+  power-of-two padding untouched); `emu/ppm.c` renders row by row. Tested directly by
+  `emu/test_ega_render.c`.
 
 ### Game state layout
 
