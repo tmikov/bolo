@@ -155,6 +155,85 @@ int main(void) {
       expect_u16("rep stosb left cx=0", cpu.reg[I8086_CX], 0);
       expect_u16("rep stosb advanced di", cpu.reg[I8086_DI], 0x0104);
     }
+
+    // The same fill with DF set. DI now walks down, so the four bytes land at
+    // 0110h down to 010Dh and DI ends one below the last one written. The run
+    // finishes with cld so it cannot leak DF into any later case.
+    //   0000 mov di,0110h        BF 10 01
+    //   0003 mov cx,0004h        B9 04 00
+    //   0006 mov al,55h          B0 55
+    //   0008 std                 FD
+    //   0009 rep stosb           F3 AA
+    //   000B cld                 FC
+    //   000C stop
+    static const uint8_t back[] = {
+        0xBF, 0x10, 0x01, 0xB9, 0x04, 0x00, 0xB0, 0x55, 0xFD, 0xF3, 0xAA, 0xFC};
+    if (!run(&cpu, back, sizeof(back), 0x000C, 40)) {
+      ++g_failures;
+    } else {
+      for (unsigned i = 0; i != 4; ++i)
+        expect_u8("std rep stosb byte", g_mem[0x10110 - i], 0x55);
+      expect_u8("std rep stosb stopped", g_mem[0x1010C], 0x00);
+      expect_u16("std rep stosb left cx=0", cpu.reg[I8086_CX], 0);
+      expect_u16("std rep stosb walked di down", cpu.reg[I8086_DI], 0x010C);
+      expect_u16("cld cleared DF", cpu.flags & I8086_DF, 0);
+    }
+  }
+
+  // --- backward lodsb: the shape BOLO uses at 2913:20BE, where std is followed
+  //     by a backward lodsb loop and a matching cld ---
+  {
+    //   0000 mov si,0105h        BE 05 01
+    //   0003 std                 FD
+    //   0004 lodsb               AC        (AL <- [0105], SI -> 0104)
+    //   0005 lodsb               AC        (AL <- [0104], SI -> 0103)
+    //   0006 cld                 FC
+    //   0007 stop
+    static const uint8_t code[] = {0xBE, 0x05, 0x01, 0xFD, 0xAC, 0xAC, 0xFC};
+    memset(g_mem, 0, sizeof(g_mem));
+    memcpy(g_mem + 0x10000, code, sizeof(code));
+    g_mem[0x10105] = 0x11;
+    g_mem[0x10104] = 0x22;
+
+    setup_cpu(&cpu);
+    if (!run_loaded(&cpu, 0x0007, 30)) {
+      ++g_failures;
+    } else {
+      expect_u8("std lodsb read the lower byte", (uint8_t)cpu.reg[I8086_AX], 0x22);
+      expect_u16("std lodsb walked si down", cpu.reg[I8086_SI], 0x0103);
+      expect_u16("cld cleared DF", cpu.flags & I8086_DF, 0);
+    }
+  }
+
+  // --- backward rep movsw: the wide form has to step by two ---
+  {
+    //   0000 mov si,0106h        BE 06 01
+    //   0003 mov di,0206h        BF 06 02
+    //   0006 mov cx,0004h        B9 04 00
+    //   0009 std                 FD
+    //   000A rep movsw           F3 A5
+    //   000C cld                 FC
+    //   000D stop
+    // Eight source bytes at 0100h..0107h are copied down to 0200h..0207h, so
+    // the destination reads identically even though the copy ran backwards.
+    static const uint8_t code[] = {
+        0xBE, 0x06, 0x01, 0xBF, 0x06, 0x02, 0xB9, 0x04, 0x00, 0xFD, 0xF3, 0xA5, 0xFC};
+    memset(g_mem, 0, sizeof(g_mem));
+    memcpy(g_mem + 0x10000, code, sizeof(code));
+    for (unsigned i = 0; i != 8; ++i)
+      g_mem[0x10100 + i] = (uint8_t)(0x10 + i);
+
+    setup_cpu(&cpu);
+    if (!run_loaded(&cpu, 0x000D, 40)) {
+      ++g_failures;
+    } else {
+      for (unsigned i = 0; i != 8; ++i)
+        expect_u8("std rep movsw byte", g_mem[0x10200 + i], (uint8_t)(0x10 + i));
+      expect_u16("std rep movsw walked si down", cpu.reg[I8086_SI], 0x00FE);
+      expect_u16("std rep movsw walked di down", cpu.reg[I8086_DI], 0x01FE);
+      expect_u16("std rep movsw left cx=0", cpu.reg[I8086_CX], 0);
+      expect_u16("cld cleared DF", cpu.flags & I8086_DF, 0);
+    }
   }
 
   // --- loop and jcxz ---
@@ -287,6 +366,66 @@ int main(void) {
     } else {
       expect_u8("in al,dx", (uint8_t)cpu.reg[I8086_AX], 0x08);
       expect_u8("out imm8,al", g_ports[0x61], 0x08);
+    }
+  }
+
+  // --- jmp far [mem], the FF /5 form. BOLO's timer ISR uses exactly this
+  //     encoding at 2913:002E to chain to the INT 08h handler it displaced, so
+  //     plan 3's tick delivery rides on it ---
+  {
+    //   0000 jmp dword ptr [0100h]   FF 2E 00 01
+    // with the far pointer 2000:0050 planted at DS:0100.
+    static const uint8_t code[] = {0xFF, 0x2E, 0x00, 0x01};
+    memset(g_mem, 0, sizeof(g_mem));
+    memcpy(g_mem + 0x10000, code, sizeof(code));
+    g_mem[0x10100] = 0x50;
+    g_mem[0x10101] = 0x00;
+    g_mem[0x10102] = 0x00;
+    g_mem[0x10103] = 0x20;
+
+    setup_cpu(&cpu);
+    if (!i8086_step(&cpu)) {
+      fprintf(stderr, "  jmp far failed: %s\n", cpu.error ? cpu.error : "(no message)");
+      ++g_failures;
+    } else {
+      expect_u16("jmp far [mem] loaded ip", cpu.ip, 0x0050);
+      expect_u16("jmp far [mem] loaded cs", cpu.sreg[I8086_CS], 0x2000);
+    }
+  }
+
+  // --- an encoding the decoder accepts but the executor does not implement
+  //     must fail loudly and name where. Plan 3 turns this into a precise
+  //     abort rather than a wrong answer ---
+  {
+    //   0000 nop                 90
+    //   0001 div al              F6 F0     (F6 /6 is not implemented)
+    // The nop is there so the reported address is the failing instruction's,
+    // not merely the start of the program.
+    static const uint8_t code[] = {0x90, 0xF6, 0xF0};
+    memset(g_mem, 0, sizeof(g_mem));
+    memcpy(g_mem + 0x10000, code, sizeof(code));
+
+    setup_cpu(&cpu);
+    if (!i8086_step(&cpu)) {
+      fprintf(stderr, "  the nop before div failed to execute\n");
+      ++g_failures;
+    } else if (i8086_step(&cpu)) {
+      fprintf(stderr, "FAIL %-32s div al executed instead of failing\n", "hard error on div");
+      ++g_failures;
+    } else {
+      if (!cpu.error) {
+        fprintf(stderr, "FAIL %-32s step failed with no message\n", "hard error on div");
+        ++g_failures;
+      }
+      if (cpu.errorAddr != 0x10001) {
+        fprintf(
+            stderr,
+            "FAIL %-32s got %05X, expected %05X\n",
+            "hard error addr",
+            cpu.errorAddr,
+            0x10001);
+        ++g_failures;
+      }
     }
   }
 
