@@ -1,7 +1,9 @@
 # BOLO Fidelity Harness — Design
 
 Date: 2026-08-07
-Status: approved, not yet implemented
+Status: approved. Plan 1 (the headless seam) is implemented and merged into `work`;
+plans 2 and 3 are not started. See `HANDOFF.md` for the current state and for where the
+built tree differs from the `## Layout and build` section below, which predates plan 1.
 
 ## Goal
 

@@ -15,10 +15,25 @@ counters that intentionally wrap, reads back from video memory, and so on. When 
 preserve the original's semantics (including its overflow and aliasing behavior) rather than
 "cleaning it up".
 
+Work in progress on a fidelity harness is described in
+`docs/superpowers/specs/2026-08-07-bolo-fidelity-harness-design.md`, with current state and
+next steps in `HANDOFF.md`. Read both before starting on `emu/`.
+
 ## Build and run
 
-There is no linter config beyond `.clang-format` and no CI. Tests are CTest targets under
-`emu/`, run with `ctest` from the build directory.
+There is no linter beyond `.clang-format` and no CI. Tests are CTest targets under `emu/`,
+run with `ctest` from the build directory. Check formatting without rewriting anything:
+
+```sh
+clang-format --dry-run -Werror src/bolo.c src/bolo.h src/ega_render.c src/ega_render.h \
+    src/shell_sokol.c emu/*.c emu/*.h
+```
+
+Never run it over `src/sokol_*.h` or `src/blit.h` — vendored and generated respectively, and
+neither matches this project's style. `src/bolo.c` reports two pre-existing violations on the
+`VID_OFFSET` macro (clang-format 18 wants `(y) * EGA_STRIDE`); everything else is clean.
+Judge the result by exit status: with `-Werror` clang-format emits `error:`, not `warning:`,
+so grepping for warnings reports success on a dirty file.
 
 **Always configure with the Ninja generator** — `-G Ninja`. Don't use the Makefile default.
 
