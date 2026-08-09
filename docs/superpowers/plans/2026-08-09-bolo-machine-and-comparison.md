@@ -592,10 +592,13 @@ Append before the final `machine_destroy`. These drive the EGA through the **CPU
     expect_u8("OR against latch, plane 0", machine_plane(m, 0, 0)[0], (uint8_t)(0xA5 | 0x0F));
     expect_u8("OR against latch, plane 1", machine_plane(m, 1, 0)[0], (uint8_t)(0x3C | 0x0F));
 
-    // XOR, the other function the game uses for erasing.
+    // XOR, the other function the game uses for erasing. Note the expected
+    // value is computed against the LATCH (still A5h from the read above), not
+    // against the AFh the OR write stored: only a read reloads the latches, so
+    // they are unchanged by the intervening write.
     OUT16(0x3CE, 0x1803); // function 11b -> XOR
     c->write8(ctx, MACHINE_EGA_BASE + 0, 0xFF);
-    expect_u8("XOR against latch, plane 0", machine_plane(m, 0, 0)[0], (uint8_t)((0xA5 | 0x0F) ^ 0xFF));
+    expect_u8("XOR against latch, plane 0", machine_plane(m, 0, 0)[0], (uint8_t)(0xA5 ^ 0xFF));
 
     // Back to replace so later tests are not surprised.
     OUT16(0x3CE, 0x0003);
@@ -604,7 +607,7 @@ Append before the final `machine_destroy`. These drive the EGA through the **CPU
     OUT16(0x3C4, 0x0F02);
     c->write8(ctx, MACHINE_EGA_BASE + EGA_PAGE_SIZE, 0x77);
     expect_u8("page 1 written", machine_plane(m, 0, 1)[0], 0x77);
-    expect_u8("page 0 unaffected", machine_plane(m, 0, 0)[0], (uint8_t)((0xA5 | 0x0F) ^ 0xFF));
+    expect_u8("page 0 unaffected", machine_plane(m, 0, 0)[0], (uint8_t)(0xA5 ^ 0xFF));
 
     // CRTC start address high selects the displayed page: 0 or 20h.
     OUT16(0x3D4, 0x000C);
@@ -864,6 +867,7 @@ loop:
   before = machine_write_count()
   ip = cpu->ip, cs = cpu->sreg[CS]
   if !i8086_step(cpu): RUN_ERROR (cpu->error names it)
+  if machine_error(): RUN_ERROR          // see below -- do not omit this
   if machine_exited(): RUN_EXITED
   if machine_write_count() == before: ++idleRun; else idleRun = 0
   if idleRun >= IDLE_THRESHOLD:
@@ -873,6 +877,8 @@ loop:
 ```
 
 Capture **before** stepping the `call` or after — either is fine as long as it is consistent, because `flip_vp` does not draw. Checking `ip` *before* the step and acting after it (as above) means the capture happens with the completed frame in place and the call already taken.
+
+**Check `machine_error()` after every step, not just `i8086_step()`'s return value.** This was found during Task 1 and is a genuine silent-failure hole: the machine reports an unimplemented port or BIOS service by setting `cpu->error` from inside `out8`/`in8`/`intercept`, but those callbacks have no way to fail the instruction, so `i8086_step()` returns **true** and the guest runs on. Without this check the harness would sail past the first unimplemented port and produce a divergence that blames the port for the machine's gap — exactly the misattribution this tool exists to prevent.
 
 **Runaway guards**, both from the spec:
 
