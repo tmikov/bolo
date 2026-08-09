@@ -100,4 +100,39 @@ static inline uint32_t i8086_linear(uint16_t seg, uint16_t off) {
   return (((uint32_t)seg << 4) + off) & 0xFFFFF;
 }
 
+/// ALU operations, numbered as the 8086 encodes them in the 80h group's reg
+/// field and in the 00-3Fh opcode families.
+typedef enum I8086AluOp {
+  I8086_ADD,
+  I8086_OR,
+  I8086_ADC,
+  I8086_SBB,
+  I8086_AND,
+  I8086_SUB,
+  I8086_XOR,
+  I8086_CMP,
+} I8086AluOp;
+
+/// Compute `a op b` at 8 or 16 bits, updating *flags. For I8086_ADC and
+/// I8086_SBB the incoming CF in *flags is part of the operation. I8086_CMP
+/// returns `a` unchanged -- the caller discards the result and keeps the flags.
+uint16_t i8086_alu(I8086AluOp op, bool wide, uint16_t a, uint16_t b, uint16_t *flags);
+
+/// inc/dec deliberately preserve CF; the original passes the carry flag between
+/// routines, so clobbering it here would corrupt game logic silently.
+uint16_t i8086_inc(bool wide, uint16_t a, uint16_t *flags);
+uint16_t i8086_dec(bool wide, uint16_t a, uint16_t *flags);
+
+uint16_t i8086_neg(bool wide, uint16_t a, uint16_t *flags);
+uint16_t i8086_not(bool wide, uint16_t a);
+
+/// Shift or rotate. `subop` is the ModRM reg field of the D0-D3 group:
+/// 0 rol, 1 ror, 2 rcl, 3 rcr, 4 shl, 5 shr, 7 sar. A count of 0 leaves every
+/// flag untouched, as on real hardware.
+uint16_t i8086_shift(uint8_t subop, bool wide, uint16_t a, uint8_t count, uint16_t *flags);
+
+/// Unsigned multiply. Returns the full product: AX for the 8-bit form,
+/// DX:AX (high half in the top 16 bits) for the 16-bit form.
+uint32_t i8086_mul(bool wide, uint16_t a, uint16_t b, uint16_t *flags);
+
 #endif // BOLO_I8086_H

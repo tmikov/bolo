@@ -377,3 +377,237 @@ int i8086_decode(const uint8_t *code, size_t avail, I8086Insn *out) {
   out->len = (uint8_t)pos;
   return (int)pos;
 }
+
+/* ---------------------------------------------------------------- ALU ---- */
+
+static uint16_t mask_of(bool wide) {
+  return wide ? 0xFFFF : 0x00FF;
+}
+
+static uint16_t sign_bit_of(bool wide) {
+  return wide ? 0x8000 : 0x0080;
+}
+
+/// PF reflects the parity of the low 8 bits only, on both 8- and 16-bit
+/// operations. Set when the number of set bits is even.
+static bool parity8(uint8_t v) {
+  v ^= (uint8_t)(v >> 4);
+  v ^= (uint8_t)(v >> 2);
+  v ^= (uint8_t)(v >> 1);
+  return (v & 1) == 0;
+}
+
+static void set_flag(uint16_t *flags, uint16_t bit, bool on) {
+  if (on)
+    *flags |= bit;
+  else
+    *flags &= (uint16_t)~bit;
+}
+
+/// SF, ZF and PF, which every result-producing operation sets the same way.
+static void set_szp(uint16_t *flags, bool wide, uint16_t result) {
+  set_flag(flags, I8086_SF, (result & sign_bit_of(wide)) != 0);
+  set_flag(flags, I8086_ZF, (result & mask_of(wide)) == 0);
+  set_flag(flags, I8086_PF, parity8((uint8_t)result));
+}
+
+uint16_t i8086_alu(I8086AluOp op, bool wide, uint16_t a, uint16_t b, uint16_t *flags) {
+  uint16_t mask = mask_of(wide), sign = sign_bit_of(wide);
+  a &= mask;
+  b &= mask;
+
+  switch (op) {
+  case I8086_AND:
+  case I8086_OR:
+  case I8086_XOR: {
+    uint16_t r = op == I8086_AND ? (uint16_t)(a & b)
+        : op == I8086_OR         ? (uint16_t)(a | b)
+                                 : (uint16_t)(a ^ b);
+    r &= mask;
+    // The logic operations always clear CF and OF. AF is architecturally
+    // undefined here; we clear it.
+    set_flag(flags, I8086_CF, false);
+    set_flag(flags, I8086_OF, false);
+    set_flag(flags, I8086_AF, false);
+    set_szp(flags, wide, r);
+    return r;
+  }
+
+  case I8086_ADD:
+  case I8086_ADC: {
+    unsigned carryIn = (op == I8086_ADC && (*flags & I8086_CF)) ? 1u : 0u;
+    uint32_t full = (uint32_t)a + b + carryIn;
+    uint16_t r = (uint16_t)(full & mask);
+    set_flag(flags, I8086_CF, (full & ((uint32_t)mask + 1)) != 0);
+    set_flag(flags, I8086_AF, ((a ^ b ^ r) & 0x10) != 0);
+    set_flag(flags, I8086_OF, ((uint16_t)(~(a ^ b) & (a ^ r)) & sign) != 0);
+    set_szp(flags, wide, r);
+    return r;
+  }
+
+  case I8086_SUB:
+  case I8086_SBB:
+  case I8086_CMP: {
+    unsigned borrowIn = (op == I8086_SBB && (*flags & I8086_CF)) ? 1u : 0u;
+    uint32_t full = (uint32_t)a - b - borrowIn;
+    uint16_t r = (uint16_t)(full & mask);
+    set_flag(flags, I8086_CF, (full & ((uint32_t)mask + 1)) != 0);
+    set_flag(flags, I8086_AF, ((a ^ b ^ r) & 0x10) != 0);
+    set_flag(flags, I8086_OF, ((uint16_t)((a ^ b) & (a ^ r)) & sign) != 0);
+    set_szp(flags, wide, r);
+    // cmp keeps the flags and throws the difference away; returning `a` lets
+    // the caller store the result unconditionally without special-casing.
+    return op == I8086_CMP ? a : r;
+  }
+  }
+  return 0;
+}
+
+uint16_t i8086_inc(bool wide, uint16_t a, uint16_t *flags) {
+  uint16_t mask = mask_of(wide), sign = sign_bit_of(wide);
+  a &= mask;
+  uint16_t r = (uint16_t)((a + 1) & mask);
+  // CF is deliberately untouched: the original passes carry between routines.
+  set_flag(flags, I8086_AF, ((a ^ 1 ^ r) & 0x10) != 0);
+  set_flag(flags, I8086_OF, r == sign);
+  set_szp(flags, wide, r);
+  return r;
+}
+
+uint16_t i8086_dec(bool wide, uint16_t a, uint16_t *flags) {
+  uint16_t mask = mask_of(wide), sign = sign_bit_of(wide);
+  a &= mask;
+  uint16_t r = (uint16_t)((a - 1) & mask);
+  // CF is deliberately untouched; see i8086_inc().
+  set_flag(flags, I8086_AF, ((a ^ 1 ^ r) & 0x10) != 0);
+  set_flag(flags, I8086_OF, a == sign);
+  set_szp(flags, wide, r);
+  return r;
+}
+
+uint16_t i8086_neg(bool wide, uint16_t a, uint16_t *flags) {
+  uint16_t mask = mask_of(wide), sign = sign_bit_of(wide);
+  a &= mask;
+  uint16_t r = (uint16_t)((0u - a) & mask);
+  set_flag(flags, I8086_CF, a != 0);
+  set_flag(flags, I8086_OF, a == sign);
+  set_flag(flags, I8086_AF, ((a ^ r) & 0x10) != 0);
+  set_szp(flags, wide, r);
+  return r;
+}
+
+uint16_t i8086_not(bool wide, uint16_t a) {
+  // not affects no flags at all.
+  return (uint16_t)(~a & mask_of(wide));
+}
+
+uint16_t i8086_shift(uint8_t subop, bool wide, uint16_t a, uint8_t count, uint16_t *flags) {
+  uint16_t mask = mask_of(wide), sign = sign_bit_of(wide);
+  a &= mask;
+
+  // A count of zero is a true no-op on the 8086: not one flag changes.
+  if (count == 0)
+    return a;
+
+  uint16_t r = a;
+  bool cf = (*flags & I8086_CF) != 0;
+
+  for (unsigned n = 0; n != count; ++n) {
+    switch (subop) {
+    case 0: // rol
+      cf = (r & sign) != 0;
+      r = (uint16_t)(((r << 1) | (cf ? 1u : 0u)) & mask);
+      break;
+    case 1: // ror
+      cf = (r & 1) != 0;
+      r = (uint16_t)(((r >> 1) | (cf ? sign : 0u)) & mask);
+      break;
+    case 2: { // rcl
+      bool msb = (r & sign) != 0;
+      r = (uint16_t)(((r << 1) | (cf ? 1u : 0u)) & mask);
+      cf = msb;
+      break;
+    }
+    case 3: { // rcr
+      bool lsb = (r & 1) != 0;
+      r = (uint16_t)(((r >> 1) | (cf ? sign : 0u)) & mask);
+      cf = lsb;
+      break;
+    }
+    case 4: // shl
+      cf = (r & sign) != 0;
+      r = (uint16_t)((r << 1) & mask);
+      break;
+    case 5: // shr
+      cf = (r & 1) != 0;
+      r = (uint16_t)((r >> 1) & mask);
+      break;
+    case 7: { // sar
+      cf = (r & 1) != 0;
+      uint16_t keep = (uint16_t)(r & sign);
+      r = (uint16_t)(((r >> 1) | keep) & mask);
+      break;
+    }
+    default:
+      return a; // subop 6 is not an 8086 instruction
+    }
+  }
+
+  set_flag(flags, I8086_CF, cf);
+
+  // OF is architecturally defined only for a count of 1. For larger counts we
+  // apply the same rule to the final result; the choice is documented rather
+  // than correct, and plan 3's screen diff is what would expose it. BOLO uses a
+  // variable count in four places (D2h/D3h).
+  switch (subop) {
+  case 0: // rol
+  case 2: // rcl
+  case 4: // shl
+    set_flag(flags, I8086_OF, (((r & sign) != 0) != cf));
+    break;
+  case 5: // shr
+    set_flag(flags, I8086_OF, (a & sign) != 0);
+    break;
+  case 7: // sar
+    set_flag(flags, I8086_OF, false);
+    break;
+  case 1: // ror
+  case 3: // rcr
+    set_flag(flags, I8086_OF, (((r & sign) != 0) != ((r & (sign >> 1)) != 0)));
+    break;
+  default:
+    break;
+  }
+
+  // The shifts set SF/ZF/PF and leave AF undefined (cleared here); the rotates
+  // leave all four untouched.
+  if (subop == 4 || subop == 5 || subop == 7) {
+    set_szp(flags, wide, r);
+    set_flag(flags, I8086_AF, false);
+  }
+
+  return r;
+}
+
+uint32_t i8086_mul(bool wide, uint16_t a, uint16_t b, uint16_t *flags) {
+  uint32_t product;
+  bool highNonzero;
+
+  if (wide) {
+    product = (uint32_t)a * b;
+    highNonzero = (product >> 16) != 0;
+  } else {
+    product = (uint32_t)(a & 0xFF) * (b & 0xFF);
+    highNonzero = (product & 0xFF00) != 0;
+  }
+
+  set_flag(flags, I8086_CF, highNonzero);
+  set_flag(flags, I8086_OF, highNonzero);
+  // SF, ZF, AF and PF are architecturally undefined after mul. We set SF/ZF/PF
+  // from the low 16 bits of the product and clear AF, so the interpreter is at
+  // least deterministic. BOLO uses `mul cl` twice, at 2913:1026 and 2913:102A.
+  set_szp(flags, true, (uint16_t)product);
+  set_flag(flags, I8086_AF, false);
+
+  return product;
+}
