@@ -47,6 +47,14 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
 completed frame: `./build/emu/bolotest --frames 100 --out /tmp/frames`. `ctest` from the build
 directory runs the harness tests. Excluded from the Emscripten build.
 
+`emu/` code is ordinary C compiled with `-Wall -Wextra` and must stay warning-free. GCC is
+stricter here than clang — check with a count, not a grep for one word, since a build that
+emits warnings still exits 0:
+
+```sh
+cmake --build build 2>&1 | grep -c warning   # must print 0
+```
+
 `src/CMakeLists.txt` has three branches — Emscripten, `APPLE`, and everything else. macOS compiles
 `sokol.m` (the sokol headers are Objective-C there) and links Cocoa/QuartzCore/OpenGL/AudioToolbox.
 Linux compiles `sokol.c` and needs `libx11-dev libxi-dev libxcursor-dev libgl-dev libasound2-dev`;
@@ -128,6 +136,26 @@ there.
   at a caller-chosen stride. The shell renders at `EGA_WIDTH_POT` stride (leaving the texture's
   power-of-two padding untouched); `emu/ppm.c` renders row by row. Tested directly by
   `emu/test_ega_render.c`.
+
+### The 8086 interpreter (`emu/`)
+
+Built to execute the original `disasm/BOLO.COM` so the port can be diffed against it. Both
+libraries are standalone — neither links `bologame` nor includes `bolo.h`.
+
+- `emu/lst.{c,h}` parses `disasm/BOLO.LST` into 3439 `{addr, len, bytes, mnemonic}` records.
+  The parsing rule has one trap: the byte field ends at a run of **two or more** spaces, not
+  the first single space — terminating early silently drops all 56 `rep`- and
+  segment-override-prefixed instructions. `test_lst` catches this by cross-checking every
+  record's bytes against `BOLO.COM`, which is also what makes the LST trustworthy as an oracle.
+- `emu/i8086.{c,h}` is the CPU: decoder, ALU, executor, in that order behind banner comments.
+  It reaches memory and ports only through the callbacks on `struct I8086`, so it knows
+  nothing about EGA or DOS. `i8086_reset()` deliberately leaves those callbacks alone.
+- Flag semantics are the bug farm, because **the original passes the carry flag between
+  routines as an argument** — so `inc`/`dec` must not touch `CF`. `test_alu` pins 30 vectors.
+- Unknown encodings are hard errors naming the opcode, never silent no-ops.
+
+Tests: `lst`, `decode`, `alu`, `exec`. The `decode` test is exhaustive over all 3439
+instructions; **never relax it to make a case pass** — a length mismatch is a real bug.
 
 ### Game state layout
 
