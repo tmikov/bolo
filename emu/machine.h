@@ -43,6 +43,10 @@ bool machine_load_com(Machine *m, const char *path, uint16_t seg);
 I8086 *machine_cpu(Machine *m);
 
 /// Read one byte of guest memory without disturbing EGA latches.
+///
+/// Inside the EGA window this reads the plane named by read map select, the
+/// same one machine_read8 would return, but leaves the latches alone. Past the
+/// two backed pages it returns 0FFh, being const and unable to fail.
 uint8_t machine_peek(const Machine *m, uint32_t linear);
 
 /// Read a little-endian word of guest memory.

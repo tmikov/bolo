@@ -265,6 +265,86 @@ int main(void) {
     machine_destroy(m2);
   }
 
+  // The same for every unimplemented I/O path. These branches are what keeps a
+  // gap in the machine from being misattributed to the port under test, so a
+  // regression turning one into a silent return would be invisible exactly
+  // when it matters. Each case gets a fresh Machine, because machine_fail
+  // keeps the first error and a set one would satisfy every later check.
+  {
+    static const struct {
+      const char *what;
+      uint16_t index; ///< 0 when the case is a bare port rather than index/data
+      uint8_t indexValue;
+      uint16_t port;
+      uint8_t value;
+    } kUnimplemented[] = {
+        {"sequencer register 01h", 0x3C4, 0x01, 0x3C5, 0x00},
+        {"graphics controller register 08h", 0x3CE, 0x08, 0x3CF, 0x00},
+        {"CRTC register 0Dh", 0x3D4, 0x0D, 0x3D5, 0x00},
+        {"write to an unmodelled port", 0, 0, 0x0378, 0x00},
+    };
+
+    for (size_t i = 0; i != sizeof(kUnimplemented) / sizeof(kUnimplemented[0]); ++i) {
+      Machine *mu = machine_create();
+      machine_load_com(mu, BOLO_COM_PATH, MACHINE_LOAD_SEG);
+      I8086 *cu = machine_cpu(mu);
+      if (kUnimplemented[i].index)
+        cu->out8(cu->ctx, kUnimplemented[i].index, kUnimplemented[i].indexValue);
+      cu->out8(cu->ctx, kUnimplemented[i].port, kUnimplemented[i].value);
+      if (!machine_error(mu)) {
+        fprintf(stderr, "FAIL: %s must set an error\n", kUnimplemented[i].what);
+        ++g_failures;
+      }
+      machine_destroy(mu);
+    }
+
+    // And the read side: machine_in8's default.
+    Machine *mr = machine_create();
+    machine_load_com(mr, BOLO_COM_PATH, MACHINE_LOAD_SEG);
+    I8086 *cr = machine_cpu(mr);
+    cr->in8(cr->ctx, 0x0378);
+    if (!machine_error(mr)) {
+      fprintf(stderr, "FAIL: a read from an unmodelled port must set an error\n");
+      ++g_failures;
+    }
+    machine_destroy(mr);
+  }
+
+  // machine_peek inside the EGA window reads the planes, not the permanently
+  // zero mem[] behind them, and leaves the latches alone so that inspecting a
+  // running guest cannot change what it reads next.
+  {
+    Machine *mp = machine_create();
+    machine_load_com(mp, BOLO_COM_PATH, MACHINE_LOAD_SEG);
+    I8086 *cp = machine_cpu(mp);
+    void *ctx = cp->ctx;
+
+    cp->out8(ctx, 0x3C4, 0x02); // map mask: plane 1 only
+    cp->out8(ctx, 0x3C5, 0x02);
+    cp->write8(ctx, MACHINE_EGA_BASE + 0x100, 0x5A);
+    cp->out8(ctx, 0x3C5, 0x01); // map mask: plane 0 only
+    cp->write8(ctx, MACHINE_EGA_BASE + 0x100, 0xF0);
+    cp->out8(ctx, 0x3CE, 0x04); // read map select: plane 1
+    cp->out8(ctx, 0x3CF, 0x01);
+
+    expect_u8("peek reads the EGA planes", machine_peek(mp, MACHINE_EGA_BASE + 0x100), 0x5A);
+
+    // A real read loads all four latches, and no read has happened yet, so
+    // every latch is still zero. ORing zero into plane 0 therefore leaves it
+    // 00h if the peek kept its hands off, and restores F0h from latch 0 if the
+    // peek leaked. Writes alone never load latches, so only the peek can.
+    cp->out8(ctx, 0x3CE, 0x03);
+    cp->out8(ctx, 0x3CF, 0x10); // data rotate: OR with the latch
+    cp->write8(ctx, MACHINE_EGA_BASE + 0x100, 0x00);
+    expect_u8("peek does not load the latches", machine_plane(mp, 0, 0)[0x100], 0x00);
+
+    if (machine_error(mp)) {
+      fprintf(stderr, "FAIL: the peek sequence raised \"%s\"\n", machine_error(mp));
+      ++g_failures;
+    }
+    machine_destroy(mp);
+  }
+
   machine_destroy(m);
 
   if (g_failures) {

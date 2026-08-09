@@ -43,11 +43,26 @@
 /// time_tick + N and then spin at 01BE, 021A, 0B72, 11EB, 12F4 until it is
 /// reached). Since 2913:02C8 increments by exactly one per delivery, an
 /// equality deadline is still hit exactly; the wait simply completes after N
-/// idle gaps instead of N timer periods. Only 2913:12DB copies time_tick
-/// anywhere (into time_5bit_e), and that runs once, before the sync point.
+/// idle gaps instead of N timer periods.
+///
+/// One read does escape both categories, and it is the one that decides
+/// whether any of this is safe: 2913:12DB copies time_tick into time_5bit_e,
+/// which is *not* scratch -- it is the index into rnd_state (see bolo.c's rnd:
+/// `rnd_state[save_t5b] + rnd_state[time_5bit]`). An index derived from an
+/// inflated tick count would make the RNG, and therefore the whole attract
+/// demo, a function of how often this detector fires.
+///
+/// What closes that hole is 2913:0196, `mov ds:time_5bit_e,ch`, which zeroes
+/// it. It sits immediately after the `rnd_state[i] = i` loop at 018B..0194 --
+/// CH is zero there because that loop runs CX down to zero -- and immediately
+/// before loc_6. That is on the exact path runner_run_to_sync asserts the
+/// guest takes, RUNNER_SYNC_IP being 018B itself. So both the RNG table and
+/// its index are reset to a fixed state after the last tick-derived write to
+/// either, and no tick-derived value survives into gameplay.
 ///
 /// If a comparison ever diverges in a way that correlates with tick counts,
-/// this is the first knob to suspect.
+/// this is still the first knob to suspect -- the argument above covers the
+/// binary's own reads of time_tick, not a mistake in the detector.
 #define IDLE_THRESHOLD 64
 
 /// Instructions to run in one frame before declaring the guest hung. BOLO does

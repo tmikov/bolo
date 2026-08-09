@@ -377,7 +377,26 @@ I8086 *machine_cpu(Machine *m) {
 }
 
 uint8_t machine_peek(const Machine *m, uint32_t linear) {
-  return m->mem[linear & 0xFFFFF];
+  linear &= 0xFFFFF;
+
+  // A0000 is diverted into plane[][], so mem[] there is permanently zero.
+  // Reading it would hand a debugger a plausible-looking 0 for every video
+  // address -- a silent no-op in the one path this file exists to support.
+  // Served from the planes instead, deliberately without loading the latches:
+  // a peek that changed the guest's read-modify-write state would corrupt the
+  // run it was called to inspect, which is the whole reason machine_peek is
+  // separate from machine_read8.
+  if (linear >= MACHINE_EGA_BASE && linear < MACHINE_EGA_BASE + MACHINE_EGA_WINDOW) {
+    uint32_t offset = (linear - MACHINE_EGA_BASE) & (MACHINE_EGA_WINDOW - 1);
+    // Past the two backed pages ega_read() fails the machine. Peeking is
+    // const and cannot, so it returns the same 0FFh that read reports there
+    // rather than inventing a zero.
+    if (offset >= EGA_PAGE_SIZE * 2)
+      return 0xFF;
+    return m->plane[m->readMapSelect & 3][offset];
+  }
+
+  return m->mem[linear];
 }
 
 uint16_t machine_peek16(const Machine *m, uint32_t linear) {
