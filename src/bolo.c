@@ -4087,10 +4087,7 @@ void bolo_key(uint8_t scanCode) {
 
 const uint8_t *bolo_plane(int plane) {
   assert(plane >= 0 && plane < EGA_PLANES);
-  // The game only ever displays page 0: ega_set_page() is called exactly once,
-  // with 0.
-  assert(g_ega_page == 0);
-  return g_ega_screen[plane];
+  return g_ega_screen[plane] + g_ega_page * EGA_PAGE_SIZE;
 }
 
 const RGBA8 *bolo_palette(void) {
@@ -4100,4 +4097,3 @@ const RGBA8 *bolo_palette(void) {
 unsigned bolo_frame_count(void) {
   return g_frame_count;
 }
-

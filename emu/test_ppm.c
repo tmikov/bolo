@@ -2,7 +2,6 @@
 #include "ppm.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 static uint8_t g_planes[EGA_PLANES][EGA_PAGE_VISIBLE];
@@ -25,6 +24,14 @@ int main(void) {
     g_planes[p][0] = 0x80;
   g_planes[0][0] |= 0x40;
   g_planes[3][0] |= 0x20;
+
+  // A distinctive pixel on the last row, to catch a row-stride miscomputation
+  // that pixels 0-2 of row 0 plus a total-size check would miss: byte 5, bit
+  // 0 of plane 2 on row 199 -> column 40, color index 4.
+  const int lastRow = EGA_HEIGHT - 1;
+  const int lastRowByte = 5;
+  const int lastRowColumn = lastRowByte * 8;
+  g_planes[2][lastRow * EGA_STRIDE + lastRowByte] = 0x80;
 
   const uint8_t *planes[EGA_PLANES];
   for (int p = 0; p != EGA_PLANES; ++p)
@@ -56,6 +63,25 @@ int main(void) {
   if (memcmp(rgb, expect, sizeof(expect)) != 0) {
     fclose(f);
     return fail("wrong pixels");
+  }
+
+  // Spot-check the last row: seek to its expected byte offset and confirm
+  // color index 4 landed there. Both ppm.c and ega_to_rgb hand-roll the
+  // row stride, so this catches a miscomputation that preserves total size.
+  long lastOfs = 15 + (long)(lastRow * EGA_WIDTH + lastRowColumn) * 3;
+  if (fseek(f, lastOfs, SEEK_SET) != 0) {
+    fclose(f);
+    return fail("fseek to last row failed");
+  }
+  uint8_t lastRgb[3];
+  if (fread(lastRgb, 1, sizeof(lastRgb), f) != sizeof(lastRgb)) {
+    fclose(f);
+    return fail("short last-row pixel data");
+  }
+  static const uint8_t expectLast[3] = {4, 8, 12};
+  if (memcmp(lastRgb, expectLast, sizeof(expectLast)) != 0) {
+    fclose(f);
+    return fail("wrong last-row pixel");
   }
 
   // The file must be exactly header + 320 * 200 * 3 bytes.

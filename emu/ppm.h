@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/// Write a EGA_WIDTH x EGA_HEIGHT image built from the four bit planes.
+/// Write an EGA_WIDTH x EGA_HEIGHT image built from the four bit planes.
 ///
 /// Each pixel's color index is its bit from plane 0 in bit 0, plane 1 in bit 1,
 /// and so on, matching the EGA's own layout. Bits run most-significant first.

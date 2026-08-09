@@ -53,7 +53,7 @@ Don't modify them.
 
 ## Architecture
 
-`src/bolo.c` (~4.3k lines) is the entire game logic in one translation unit, built as the
+`src/bolo.c` (~4.1k lines) is the entire game logic in one translation unit, built as the
 `bologame` static library and driven through `src/bolo.h`. `src/shell_sokol.c` is the windowed
 front end (rendering, audio, keyboard); `emu/bolotest.c` is the headless one. `sokol.c`/`sokol.m`
 exist only to instantiate `SOKOL_IMPL`.

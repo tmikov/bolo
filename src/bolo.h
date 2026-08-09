@@ -76,7 +76,19 @@ void bolo_run_tick(int pump);
 /// Deliver a key, as the original's INT 09h handler did.
 void bolo_key(uint8_t scanCode);
 
-/// EGA_PAGE_VISIBLE bytes of the completed frame for `plane` (0..3).
+/// EGA_PAGE_VISIBLE bytes of plane `plane` (0..3), as they stand after the
+/// count'th crossing of the frame gate (see bolo_frame_count()).
+///
+/// This is the frame drawn *during* that gate crossing's iteration, not the
+/// frame that was on screen when the gate was crossed: `async_start` case 12
+/// increments the frame count at the point the original calls `flip_vp`, but
+/// control does not return to the caller there — it falls through and draws
+/// an entirely new frame into page 0 before finally yielding. So when
+/// bolo_run_tick() returns with bolo_frame_count() == k, this buffer holds
+/// the frame drawn in iteration k, while the original's k-th capture at
+/// `029A` shows the frame drawn in iteration k-1. To compare the two,
+/// align the port's planes at bolo_frame_count() == k with the original's
+/// capture k+1.
 const uint8_t *bolo_plane(int plane);
 
 /// The 16 EGA colors.

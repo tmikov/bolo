@@ -6,6 +6,7 @@
 #include "bolo.h"
 #include "ppm.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +28,7 @@ static void usage(const char *argv0) {
 static long parse_positive(const char *what, const char *text) {
   char *end;
   long value = strtol(text, &end, 10);
-  if (*text == '\0' || *end != '\0' || value <= 0) {
+  if (*text == '\0' || *end != '\0' || value <= 0 || value > INT_MAX) {
     fprintf(stderr, "%s: expected a positive integer, got \"%s\"\n", what, text);
     exit(2);
   }
@@ -57,7 +58,9 @@ int main(int argc, char **argv) {
   }
 
   if (mkdir(out, 0777) != 0) {
-    // Reusing an existing directory is fine; anything else is not.
+    // Reusing an existing directory is fine; anything else is not. Note that
+    // an existing directory is reused as-is and never cleared, so stale
+    // frames from a previous run can remain alongside the new ones.
     struct stat st;
     if (stat(out, &st) != 0 || !S_ISDIR(st.st_mode)) {
       fprintf(stderr, "cannot create output directory \"%s\"\n", out);

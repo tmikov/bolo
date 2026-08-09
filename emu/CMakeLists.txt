@@ -12,6 +12,15 @@ add_test(NAME ppm COMMAND test_ppm)
 add_executable(bolotest bolotest.c)
 target_link_libraries(bolotest bolo_ppm)
 
+# Unlike src/bolo.c, which is deliberately faithful to 8086 assembly and
+# triggers pre-existing -Wextra warnings out of scope here, emu/ code is
+# ordinary C with no such excuse.
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  foreach(target test_link bolo_ppm test_ppm bolotest)
+    target_compile_options(${target} PRIVATE -Wall -Wextra)
+  endforeach()
+endif()
+
 add_test(NAME headless_frames
          COMMAND bolotest --frames 20 --out ${CMAKE_CURRENT_BINARY_DIR}/frames-smoke)
 

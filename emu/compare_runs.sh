@@ -15,6 +15,13 @@ PUMP_A=$3
 PUMP_B=$4
 FRAMES=$5
 
+for arg in "$BOLOTEST" "$WORKDIR" "$PUMP_A" "$PUMP_B" "$FRAMES"; do
+  if [ -z "$arg" ]; then
+    echo "usage: $0 <bolotest> <workdir> <pumpA> <pumpB> <frames>: no argument may be empty" >&2
+    exit 2
+  fi
+done
+
 rm -rf "$WORKDIR/a" "$WORKDIR/b"
 mkdir -p "$WORKDIR/a" "$WORKDIR/b"
 

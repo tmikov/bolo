@@ -1117,4 +1117,4 @@ git commit -m "Add determinism and pump-invariance tests"
 
 ## Notes for the next plan
 
-`bolo_frame_count()` increments at exactly the point where the original calls `flip_vp` (`2913:029A`, immediately after `mov ds:last_tick,al`). Plan 3 captures the original on that instruction and the port on this counter, which is what makes the two sides comparable frame for frame.
+`bolo_frame_count()` increments at exactly the point where the original calls `flip_vp` (`2913:029A`, immediately after `mov ds:last_tick,al`). But control does not return to the caller there — `async_start` case 12 falls through to case 9 and case 11, which draw an entirely new frame into page 0 before the routine finally yields. So the two sides do *not* land on the same instant: when `bolo_run_tick()` returns with `bolo_frame_count() == k`, `bolo_plane()` holds the frame drawn *during* iteration k, while the original's k-th capture at `029A` shows the frame drawn in iteration k-1. Plan 3 must align the port's planes at `bolo_frame_count() == k` with the original's capture `k+1`, not `k`.

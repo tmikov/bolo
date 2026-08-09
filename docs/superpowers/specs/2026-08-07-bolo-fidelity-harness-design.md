@@ -185,8 +185,16 @@ audio comparison would bring cycle accounting back. Consistent with screen-level
 
 Trigger on the guest reaching `029A`. At that instant the page being drawn — named by
 `dest_seg_e` at `4F8Ah`, read directly out of guest memory — holds the completed frame
-about to be flipped in. The port's equivalent is page 0 after `bolo_run_tick()` returns
-(the port pins `dest_seg` to 0 and has `flip_vp` commented out).
+about to be flipped in, i.e. the original's k-th capture at `029A` is the frame drawn in
+iteration k-1.
+
+The port's `bolo_plane()` does not line up with that instant: `async_start` case 12
+increments `g_frame_count` at the point the original calls `flip_vp`, but control doesn't
+return there — it falls through and draws an entirely new frame into page 0 before finally
+yielding. So when `bolo_run_tick()` returns with `bolo_frame_count() == k`, `bolo_plane()`
+holds the frame drawn *during* iteration k, one frame ahead of the original's capture at
+the same k. To compare the two sides frame for frame, align the port's planes at
+`bolo_frame_count() == k` with the original's capture `k+1`.
 
 Compare 4 planes x 8000 bytes = 32000 bytes. The guest's `time_tick` at `2F67h` labels
 the frame.
