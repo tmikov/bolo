@@ -38,12 +38,16 @@ add_executable(test_alu test_alu.c)
 target_link_libraries(test_alu bolo_i8086)
 add_test(NAME alu COMMAND test_alu)
 
+add_executable(test_exec test_exec.c)
+target_link_libraries(test_exec bolo_i8086)
+add_test(NAME exec COMMAND test_exec)
+
 # Unlike src/bolo.c, which is deliberately faithful to 8086 assembly and
 # triggers pre-existing -Wextra warnings out of scope here, emu/ code is
 # ordinary C with no such excuse.
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   foreach(target test_link bolo_ppm test_ppm bolotest test_ega_render
-                 bolo_lst test_lst bolo_i8086 test_decode test_alu)
+                 bolo_lst test_lst bolo_i8086 test_decode test_alu test_exec)
     target_compile_options(${target} PRIVATE -Wall -Wextra)
   endforeach()
 endif()
