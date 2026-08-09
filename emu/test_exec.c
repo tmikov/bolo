@@ -37,6 +37,21 @@ static void port_out8(void *ctx, uint16_t port, uint8_t value) {
   g_ports[port] = value;
 }
 
+/// Every vector the intercept hook was offered, in order.
+static uint8_t g_interceptVec[4];
+static unsigned g_interceptCount;
+
+/// Claims INT 21h and declines everything else, the way plan 3's machine will
+/// service DOS and BIOS natively while leaving BOLO's own INT 08h and INT 09h
+/// handlers to be reached through the guest's own table.
+static bool claim_21h(void *ctx, uint8_t vec) {
+  (void)ctx;
+  if (g_interceptCount < sizeof(g_interceptVec) / sizeof(g_interceptVec[0]))
+    g_interceptVec[g_interceptCount] = vec;
+  ++g_interceptCount;
+  return vec == 0x21;
+}
+
 /// Reset the CPU, attach the toy bus, and point every segment at 1000h so the
 /// program at linear 10000h is addressable as 1000:0000.
 static void setup_cpu(I8086 *cpu) {
@@ -46,6 +61,10 @@ static void setup_cpu(I8086 *cpu) {
   cpu->write8 = mem_write8;
   cpu->in8 = port_in8;
   cpu->out8 = port_out8;
+  // i8086_reset() deliberately leaves the callbacks alone, so every one of them
+  // has to be set here -- including the optional hook, which is otherwise
+  // whatever was on the stack.
+  cpu->intercept = NULL;
   cpu->sreg[I8086_CS] = 0x1000;
   cpu->sreg[I8086_DS] = 0x1000;
   cpu->sreg[I8086_ES] = 0x1000;
@@ -426,6 +445,126 @@ int main(void) {
             0x10001);
         ++g_failures;
       }
+    }
+  }
+
+  // --- the intercept hook: the host claims one vector, the guest's own table
+  //     still serves the other ---
+  {
+    //   0000 int 21h             CD 21     (claimed by the host)
+    //   0002 int 40h             CD 40     (declined, vectors through the IVT)
+    //   0004 stop
+    // Handler planted at 1000:0020:  mov bx,0BEEFh (BB EF BE) then iret (CF).
+    static const uint8_t code[] = {0xCD, 0x21, 0xCD, 0x40};
+    memset(g_mem, 0, sizeof(g_mem));
+    memcpy(g_mem + 0x10000, code, sizeof(code));
+    g_mem[0x40 * 4 + 0] = 0x20;
+    g_mem[0x40 * 4 + 1] = 0x00;
+    g_mem[0x40 * 4 + 2] = 0x00;
+    g_mem[0x40 * 4 + 3] = 0x10;
+    g_mem[0x10020] = 0xBB;
+    g_mem[0x10021] = 0xEF;
+    g_mem[0x10022] = 0xBE;
+    g_mem[0x10023] = 0xCF;
+
+    setup_cpu(&cpu);
+    cpu.intercept = claim_21h;
+    g_interceptCount = 0;
+
+    // Step the claimed one on its own: the frame it must not push is only
+    // observable before the declined one pushes a frame of its own.
+    if (!i8086_step(&cpu)) {
+      fprintf(stderr, "  int 21h step failed: %s\n", cpu.error ? cpu.error : "(no message)");
+      ++g_failures;
+    } else {
+      expect_u16("claimed int pushed no frame", cpu.reg[I8086_SP], 0xFFFE);
+      expect_u16("claimed int resumed after it", cpu.ip, 0x0002);
+      expect_u16("claimed int left cs alone", cpu.sreg[I8086_CS], 0x1000);
+      expect_u8("hook was offered 21h", g_interceptVec[0], 0x21);
+    }
+
+    if (!run_loaded(&cpu, 0x0004, 30)) {
+      ++g_failures;
+    } else {
+      expect_u8("hook was offered 40h", g_interceptVec[1], 0x40);
+      expect_u8("hook was offered both, once each", (uint8_t)g_interceptCount, 2);
+      expect_u16("declined int ran the guest handler", cpu.reg[I8086_BX], 0xBEEF);
+      expect_u16("declined int's iret restored sp", cpu.reg[I8086_SP], 0xFFFE);
+    }
+  }
+
+  // --- xchg with a memory operand, both widths. The wiring risk is which of
+  //     the two written values lands where ---
+  {
+    //   0000 mov bx,1234h              BB 34 12
+    //   0003 mov word ptr [0100h],5678h  C7 06 00 01 78 56
+    //   0009 xchg [0100h],bx           87 1E 00 01
+    //   000D mov ah,9Ah                B4 9A
+    //   000F mov byte ptr [0102h],5Ch  C6 06 02 01 5C
+    //   0014 xchg [0102h],ah           86 26 02 01
+    //   0018 stop
+    static const uint8_t code[] = {0xBB, 0x34, 0x12, 0xC7, 0x06, 0x00, 0x01, 0x78,
+                                   0x56, 0x87, 0x1E, 0x00, 0x01, 0xB4, 0x9A, 0xC6,
+                                   0x06, 0x02, 0x01, 0x5C, 0x86, 0x26, 0x02, 0x01};
+    if (!run(&cpu, code, sizeof(code), 0x0018, 40)) {
+      ++g_failures;
+    } else {
+      expect_u16("xchg rm16 -> register", cpu.reg[I8086_BX], 0x5678);
+      expect_u8("xchg rm16 -> memory low", g_mem[0x10100], 0x34);
+      expect_u8("xchg rm16 -> memory high", g_mem[0x10101], 0x12);
+      expect_u8("xchg rm8 -> register", (uint8_t)(cpu.reg[I8086_AX] >> 8), 0x5C);
+      expect_u8("xchg rm8 -> memory", g_mem[0x10102], 0x9A);
+    }
+  }
+
+  // --- D2/D3 shifts with a CL count and a memory operand. i8086_shift is unit
+  //     tested at count 1, so what is under test here is the dispatch wiring:
+  //     where the count comes from, the operand width, and the writeback ---
+  {
+    //   0000 mov byte ptr [0100h],03h    C6 06 00 01 03
+    //   0005 mov cx,0103h                B9 03 01
+    //   0008 shl byte ptr [0100h],cl     D2 26 00 01
+    //   000C mov word ptr [0104h],0F000h C7 06 04 01 00 F0
+    //   0012 shr word ptr [0104h],cl     D3 2E 04 01
+    //   0016 stop
+    // CX is 0103h so that CL is 3 while CH is not: a count taken from the whole
+    // of CX would be 259, which shifts both operands to zero.
+    static const uint8_t code[] = {0xC6, 0x06, 0x00, 0x01, 0x03, 0xB9, 0x03, 0x01,
+                                   0xD2, 0x26, 0x00, 0x01, 0xC7, 0x06, 0x04, 0x01,
+                                   0x00, 0xF0, 0xD3, 0x2E, 0x04, 0x01};
+    if (!run(&cpu, code, sizeof(code), 0x0016, 40)) {
+      ++g_failures;
+    } else {
+      expect_u8("shl rm8,cl wrote back", g_mem[0x10100], 0x18);
+      expect_u8("shl rm8,cl left the next byte", g_mem[0x10101], 0x00);
+      expect_u8("shr rm16,cl wrote back low", g_mem[0x10104], 0x00);
+      expect_u8("shr rm16,cl wrote back high", g_mem[0x10105], 0x1E);
+      expect_u16("shift did not consume cx", cpu.reg[I8086_CX], 0x0103);
+    }
+  }
+
+  // --- F6 /4 and F7 /4 mul: where the halves of the product land ---
+  {
+    //   0000 mov al,10h                 B0 10
+    //   0002 mov byte ptr [0100h],24h   C6 06 00 01 24
+    //   0007 mul byte ptr [0100h]       F6 26 00 01   (AX <- 10h * 24h = 0240h)
+    //   000B mov bx,ax                  8B D8
+    //   000D mov ax,1000h               B8 00 10
+    //   0010 mov word ptr [0102h],2000h C7 06 02 01 00 20
+    //   0016 mul word ptr [0102h]       F7 26 02 01   (DX:AX <- 0200_0000h)
+    //   001A stop
+    // The byte form's product needs both halves of AX, and the word form's
+    // needs DX, so neither passes if the result is truncated or misplaced.
+    static const uint8_t code[] = {0xB0, 0x10, 0xC6, 0x06, 0x00, 0x01, 0x24, 0xF6, 0x26,
+                                   0x00, 0x01, 0x8B, 0xD8, 0xB8, 0x00, 0x10, 0xC7, 0x06,
+                                   0x02, 0x01, 0x00, 0x20, 0xF7, 0x26, 0x02, 0x01};
+    if (!run(&cpu, code, sizeof(code), 0x001A, 40)) {
+      ++g_failures;
+    } else {
+      expect_u16("mul rm8 filled all of ax", cpu.reg[I8086_BX], 0x0240);
+      expect_u16("mul rm16 low half in ax", cpu.reg[I8086_AX], 0x0000);
+      expect_u16("mul rm16 high half in dx", cpu.reg[I8086_DX], 0x0200);
+      expect_u16("mul set CF on a wide product", cpu.flags & I8086_CF, I8086_CF);
     }
   }
 

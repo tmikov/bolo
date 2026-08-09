@@ -46,18 +46,23 @@ static void build_table(void) {
   // The eight ALU families at 00-3F. Each occupies 8 bytes:
   //   +0 rm8,r8   +1 rm16,r16   +2 r8,rm8   +3 r16,rm16
   //   +4 al,imm8  +5 ax,imm16   +6 push sreg  +7 pop sreg
-  static const char *const kAlu[8] = {"add", "or", "adc", "sbb", "and", "sub", "xor", "cmp"};
   for (unsigned i = 0; i != 8; ++i) {
     unsigned base = i * 8;
-    set_op(base + 0, OF_MODRM, kAlu[i]);
-    set_op(base + 1, OF_MODRM, kAlu[i]);
-    set_op(base + 2, OF_MODRM, kAlu[i]);
-    set_op(base + 3, OF_MODRM, kAlu[i]);
-    set_op(base + 4, OF_I8, kAlu[i]);
-    set_op(base + 5, OF_I16, kAlu[i]);
+    set_op(base + 0, OF_MODRM, kGroup80[i]);
+    set_op(base + 1, OF_MODRM, kGroup80[i]);
+    set_op(base + 2, OF_MODRM, kGroup80[i]);
+    set_op(base + 3, OF_MODRM, kGroup80[i]);
+    set_op(base + 4, OF_I8, kGroup80[i]);
+    set_op(base + 5, OF_I16, kGroup80[i]);
   }
-  // 26/2E/36/3E are segment override prefixes, not push/pop sreg, and 27/2F/
-  // 37/3F are the BCD adjusts, none of which BOLO uses. Overwrite them.
+  // The loop above writes only the +0..+5 slots, so every +6/+7 is still the
+  // OF_BAD the table was initialized to. Half of them are real opcodes and are
+  // filled in below: 06/0E/16/1E push a segment register, 07/17/1F pop one.
+  // The rest are spelled out as OF_BAD rather than left implicit, because
+  // "+6 push sreg, +7 pop sreg" above would otherwise read as if they were --
+  // 0F is pop cs, 26/2E/36/3E are the segment override prefixes and belong to
+  // the prefix loop, and 27/2F/37/3F are the BCD adjusts. BOLO uses none of
+  // these five.
   set_op(0x06, OF_NONE, "push");
   set_op(0x07, OF_NONE, "pop");
   set_op(0x0E, OF_NONE, "push");
@@ -637,6 +642,13 @@ static bool fail_op(I8086 *cpu, uint32_t addr, const char *what, unsigned op, in
 
 /* -- the bus -- */
 
+// A word access whose second byte crosses a boundary wraps at the 1 MB linear
+// edge here, whereas a real 8086 wraps within the 64 KB segment: a word read at
+// offset FFFFh takes its high byte from offset 0 of the same segment, not from
+// the next paragraph. Fixing it means threading seg:off through every bus
+// helper, which is a wider change than the risk warrants -- BOLO never places a
+// word operand across the boundary. Recorded so a future divergence hunt can
+// find the deviation instead of rediscovering it.
 static uint16_t read16(I8086 *cpu, uint32_t linear) {
   uint8_t lo = cpu->read8(cpu->ctx, linear);
   uint8_t hi = cpu->read8(cpu->ctx, (linear + 1) & 0xFFFFF);
@@ -1319,6 +1331,12 @@ bool i8086_step(I8086 *cpu) {
     break;
 
   case 0xCD: // int imm8
+    // The host gets first refusal, so the machine can service INT 10h/21h/20h
+    // natively while BOLO's own INT 08h and INT 09h handlers are still reached
+    // through the guest's table. IP already points past the INT, so a claimed
+    // interrupt simply falls through with no frame pushed.
+    if (cpu->intercept && cpu->intercept(cpu->ctx, (uint8_t)insn.imm))
+      break;
     i8086_interrupt(cpu, (uint8_t)insn.imm);
     break;
   case 0xCF: // iret

@@ -8,7 +8,6 @@
 #include "i8086.h"
 
 #include <stdio.h>
-#include <string.h>
 
 /// The six arithmetic flags. TF/IF/DF are control flags and not under test.
 #define TESTED_FLAGS (I8086_CF | I8086_PF | I8086_AF | I8086_ZF | I8086_SF | I8086_OF)

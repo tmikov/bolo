@@ -10,7 +10,6 @@
 #include "lst.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define COM_LOAD_ADDR 0x0100

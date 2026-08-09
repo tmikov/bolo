@@ -75,14 +75,30 @@ struct I8086 {
   void (*write8)(void *ctx, uint32_t linear, uint8_t value);
   uint8_t (*in8)(void *ctx, uint16_t port);
   void (*out8)(void *ctx, uint16_t port, uint8_t value);
+
+  /// Called when the guest executes INT n, before the CPU vectors through the
+  /// guest's interrupt table. Return true if the host serviced the interrupt:
+  /// the CPU then resumes at the instruction after the INT, with no frame
+  /// pushed. Return false -- or leave this NULL -- to vector normally.
+  ///
+  /// The harness's machine layer services INT 10h/21h/20h itself, while BOLO's
+  /// own INT 08h and INT 09h handlers, installed via DOS AH=25h, must still be
+  /// reached through the guest's own table.
+  bool (*intercept)(void *ctx, uint8_t vec);
 };
 
 /// Decode one instruction from `code` (at most `avail` bytes readable).
 /// Returns its length in bytes, or 0 if the encoding is not implemented, in
-/// which case `out->opcode` still holds the offending opcode byte.
+/// which case `out->opcode` still holds the offending opcode byte. The one
+/// exception is running out of `avail` before the opcode byte is reached, which
+/// leaves `out->opcode` zero because no opcode was ever read.
 int i8086_decode(const uint8_t *code, size_t avail, I8086Insn *out);
 
+/* ----------------------------------------------------------- executor ---- */
+
 /// Zero the registers, set FLAGS to its power-on value and clear `error`.
+/// Leaves `ctx` and the callbacks alone, so a caller may install them either
+/// side of the reset.
 /// Does not touch memory; the caller loads the program and sets CS:IP and SS:SP.
 void i8086_reset(I8086 *cpu);
 
@@ -99,6 +115,8 @@ void i8086_interrupt(I8086 *cpu, uint8_t vec);
 static inline uint32_t i8086_linear(uint16_t seg, uint16_t off) {
   return (((uint32_t)seg << 4) + off) & 0xFFFFF;
 }
+
+/* ---------------------------------------------------------------- ALU ---- */
 
 /// ALU operations, numbered as the 8086 encodes them in the 80h group's reg
 /// field and in the 00-3Fh opcode families.
