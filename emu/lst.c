@@ -1,6 +1,5 @@
 #include "lst.h"
 
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -141,7 +140,7 @@ static bool parse_line(const char *line, int lineNo, LstInsn *out) {
   // First token after the byte field is the mnemonic; a second token of "db"
   // or "dw" means the first was actually a data label.
   const char *rest = end;
-  char word[32], word2[32];
+  char word[12], word2[12];
   if (!next_word(&rest, word, sizeof(word)))
     return false;
   if (!is_mnemonic(word))
