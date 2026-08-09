@@ -24,6 +24,11 @@ struct Machine {
 
   uint8_t speakerPort; ///< port 61h: last value written, read back verbatim.
   uint8_t scanCode; ///< port 60h: the pending keyboard scan code.
+
+  /// Every memory and port write the guest has made. The runner watches this
+  /// for a run of instructions that store nothing, which is what a spin on
+  /// time_tick looks like from outside -- see runner.c.
+  uint64_t writeCount;
 };
 
 static void machine_fail(Machine *m, const char *fmt, ...) {
@@ -97,6 +102,7 @@ static uint8_t machine_read8(void *ctx, uint32_t linear) {
 
 static void machine_write8(void *ctx, uint32_t linear, uint8_t value) {
   Machine *m = (Machine *)ctx;
+  ++m->writeCount;
   linear &= 0xFFFFF;
   if (linear >= MACHINE_EGA_BASE && linear < MACHINE_EGA_BASE + MACHINE_EGA_WINDOW) {
     ega_write(m, linear, value);
@@ -142,6 +148,7 @@ static uint8_t machine_in8(void *ctx, uint16_t port) {
 
 static void machine_out8(void *ctx, uint16_t port, uint8_t value) {
   Machine *m = (Machine *)ctx;
+  ++m->writeCount;
   switch (port) {
   case MACHINE_PORT_SEQ_INDEX:
     m->seqIndex = value;
@@ -341,8 +348,17 @@ bool machine_load_com(Machine *m, const char *path, uint16_t seg) {
 
   // A tiny INT 08h/09h stub, planted in the unused tail of the BIOS data
   // area (0000:0500), far from both the IVT and the loaded guest:
-  //   mov al,20h / out 20h,al / iret
-  static const uint8_t stub[] = {0xB0, 0x20, 0xE6, 0x20, 0xCF};
+  //   push ax / mov al,20h / out 20h,al / pop ax / iret
+  //
+  // The push/pop is not decoration. A hardware interrupt can land between any
+  // two instructions, so its handler must leave every register exactly as it
+  // found it -- iret restores FLAGS but nothing restores AX. Without it the
+  // title screen breaks in a way that looks like a game bug: it spins at
+  // 2913:11E5 with AL zeroed for the "is there a key?" test, the tick lands,
+  // AL comes back as 20h, the very next compare sees kbdin_key != AL and the
+  // screen exits as if a key had been pressed -- leaving lastkey_tick zero, so
+  // the attract demo never starts and the level editor waits forever.
+  static const uint8_t stub[] = {0x50, 0xB0, 0x20, 0xE6, 0x20, 0x58, 0xCF};
   memcpy(m->mem + 0x0500, stub, sizeof(stub));
   m->mem[8 * 4 + 0] = 0x00;
   m->mem[8 * 4 + 1] = 0x05;
@@ -374,6 +390,10 @@ const char *machine_error(const Machine *m) {
   return m->hasError ? m->errorBuf : NULL;
 }
 
+uint64_t machine_write_count(const Machine *m) {
+  return m->writeCount;
+}
+
 bool machine_exited(const Machine *m) {
   return m->exited;
 }
@@ -383,9 +403,10 @@ const uint8_t *machine_plane(const Machine *m, int plane, int page) {
 }
 
 int machine_draw_page(const Machine *m) {
-  // dest_seg_e is at 2913:4F8A; flip_vp tests bit 1 of its high byte.
+  // dest_seg_e is at 2913:4F8A; flip_vp tests bit 1 of its high byte to pick
+  // the page to display. Drawing goes to the other one -- see machine.h.
   uint8_t high = machine_peek(m, i8086_linear(MACHINE_LOAD_SEG, 0x4F8B));
-  return (high & 0x02) ? 1 : 0;
+  return (high & 0x02) ? 0 : 1;
 }
 
 int machine_display_page(const Machine *m) {

@@ -51,6 +51,10 @@ uint16_t machine_peek16(const Machine *m, uint32_t linear);
 /// Non-NULL once the machine has hit something it does not implement.
 const char *machine_error(const Machine *m);
 
+/// Total memory and port writes the guest has performed. The runner uses this
+/// to detect a pure-read spin without knowing which loop it is in.
+uint64_t machine_write_count(const Machine *m);
+
 /// True once the guest has executed INT 20h.
 bool machine_exited(const Machine *m);
 
@@ -60,9 +64,20 @@ bool machine_exited(const Machine *m);
 /// this returns the displayed part, which is what gets compared.
 const uint8_t *machine_plane(const Machine *m, int plane, int page);
 
-/// The page the guest is currently drawing into, decoded from dest_seg_e at
-/// 2913:4F8A: flip_vp tests bit 1 of its high byte to choose the CRTC start
-/// address, so bit 1 of 4F8Bh is the page number.
+/// The page the guest is currently drawing into.
+///
+/// dest_seg_e at 2913:4F8A is an EGA segment (A000h or A200h) and bit 1 of its
+/// high byte is a page number -- but it is the page flip_vp is about to make
+/// visible, i.e. the one holding the *previous* frame. The guest draws into the
+/// other one: clr_alt_box (2913:04CA), first thing in every frame, loads
+/// ES with dest_seg_e XOR 0200h, clears the maze area through it and returns
+/// without restoring ES, so every draw routine for the rest of the frame writes
+/// that page. flip_vp then shows dest_seg_e's page and toggles the bit, which
+/// makes the page just drawn the next one shown.
+///
+/// So this is the complement of bit 1 of 4F8Bh -- verified against the guest:
+/// on its very first frame dest_seg_e names page 0 and the freshly drawn maze
+/// is in page 1.
 int machine_draw_page(const Machine *m);
 
 /// The page currently being displayed, from CRTC register 0Ch.

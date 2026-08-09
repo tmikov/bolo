@@ -10,7 +10,6 @@ target_link_libraries(test_ppm bolo_ppm)
 add_test(NAME ppm COMMAND test_ppm)
 
 add_executable(bolotest bolotest.c)
-target_link_libraries(bolotest bolo_ppm)
 
 add_executable(test_ega_render test_ega_render.c)
 target_link_libraries(test_ega_render ega_render)
@@ -52,16 +51,37 @@ add_executable(test_machine test_machine.c)
 target_link_libraries(test_machine bolo_machine)
 add_test(NAME machine COMMAND test_machine)
 
+add_library(bolo_runner STATIC runner.c)
+target_include_directories(bolo_runner PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(bolo_runner bolo_machine)
+
+add_executable(test_runner test_runner.c)
+target_link_libraries(test_runner bolo_runner)
+add_test(NAME runner COMMAND test_runner)
+
+# bolotest drives both sides, so it is linked here, after the runner exists.
+target_link_libraries(bolotest bolo_ppm bolo_runner)
+
 # Unlike src/bolo.c, which is deliberately faithful to 8086 assembly and
 # triggers pre-existing -Wextra warnings out of scope here, emu/ code is
 # ordinary C with no such excuse.
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   foreach(target test_link bolo_ppm test_ppm bolotest test_ega_render
                  bolo_lst test_lst bolo_i8086 test_decode test_alu test_exec
-                 bolo_machine test_machine)
+                 bolo_machine test_machine bolo_runner test_runner)
     target_compile_options(${target} PRIVATE -Wall -Wextra)
   endforeach()
 endif()
+
+# Pins the interpreter's behavior independently of the C port: one line per
+# frame of "index time_tick FNV-1a-of-all-four-planes" for the original's first
+# 60 frames. A failure here means the interpreter, the machine or the run loop
+# changed what the original does -- decide whether that was a bug or a fix
+# before regenerating golden-original.txt.
+add_test(NAME golden COMMAND bolotest --original ${CMAKE_CURRENT_BINARY_DIR}/golden-run
+                             --frames 60
+                             --golden ${CMAKE_CURRENT_BINARY_DIR}/golden-out.txt
+                             --check-golden ${CMAKE_CURRENT_SOURCE_DIR}/golden-original.txt)
 
 add_test(NAME headless_frames
          COMMAND bolotest --frames 20 --out ${CMAKE_CURRENT_BINARY_DIR}/frames-smoke)
