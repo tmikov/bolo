@@ -47,6 +47,31 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
 completed frame: `./build/emu/bolotest --frames 100 --out /tmp/frames`. `ctest` from the build
 directory runs the harness tests. Excluded from the Emscripten build.
 
+**Comparing the port against the original.** `bolotest --compare` runs both sides at once — the C
+port, and `disasm/BOLO.COM` under the 8086 machine in `emu/` — and compares their EGA planes frame
+by frame. It is the only thing in the repo that actually checks the project's stated goal.
+
+```sh
+./build/emu/bolotest --compare --ticks 1000 --out /tmp/cmp --baseline emu/baseline.txt
+```
+
+On a divergence it prints the frame, the guest's `time_tick`, how many of the 32000 bytes differ
+and the **bounding box of the differing pixels** — a box is diagnosable, a byte count is not — and
+writes `orig-NNNNN.ppm`, `port-NNNNN.ppm` and `diff-NNNNN.ppm` (the original, dimmed, with
+differing pixels in magenta) into the output directory. `--continue-past-diff` keeps going instead
+of stopping at the first one.
+
+`emu/baseline.txt` holds one integer: the highest frame count known to match. The `compare` test
+fails only when the port matches *fewer* frames than that. When it matches more, the tool prints
+`IMPROVED: update emu/baseline.txt to N` and a human commits the new number — the tool never
+rewrites it, because a file that always agrees with the last run is not a ratchet.
+
+**A divergence is investigated, never tuned away.** Do not adjust the comparison, the alignment or
+the baseline to make a difference disappear; the difference is the finding. Two things to know
+before chasing one: the port's planes at `bolo_frame_count() == k` line up with the original's
+capture **k+1** (see `bolo_plane()` in `src/bolo.h`), and if a divergence correlates with tick
+counts, `IDLE_THRESHOLD` in `emu/runner.h` is the first suspect.
+
 `emu/` code is ordinary C compiled with `-Wall -Wextra` and must stay warning-free. GCC is
 stricter here than clang — check with a count, not a grep for one word, since a build that
 emits warnings still exits 0:

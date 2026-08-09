@@ -90,6 +90,15 @@ add_test(NAME determinism
          COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/compare_runs.sh
                  $<TARGET_FILE:bolotest> ${CMAKE_CURRENT_BINARY_DIR}/det 4 4 30)
 
+# The ratchet: run the port and the original side by side and check that the
+# port still matches the original for at least as many frames as baseline.txt
+# records. It fails only on a regression; an improvement is reported and left
+# for a human to commit. A divergence is a finding to investigate, never
+# something to tune away by adjusting the comparison.
+add_test(NAME compare COMMAND bolotest --compare --ticks 200
+                              --out ${CMAKE_CURRENT_BINARY_DIR}/cmp
+                              --baseline ${CMAKE_CURRENT_SOURCE_DIR}/baseline.txt)
+
 # Gameplay is gated on the timer tick, so the number of async_start() calls per
 # tick must not change a single pixel.
 add_test(NAME pump_invariance
