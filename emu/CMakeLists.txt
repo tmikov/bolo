@@ -44,7 +44,7 @@ add_test(NAME exec COMMAND test_exec)
 
 add_library(bolo_machine STATIC machine.c)
 target_include_directories(bolo_machine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(bolo_machine bolo_i8086)
+target_link_libraries(bolo_machine bolo_i8086 bologame)
 target_compile_definitions(bolo_machine PUBLIC
     BOLO_COM_PATH="${CMAKE_SOURCE_DIR}/disasm/BOLO.COM")
 

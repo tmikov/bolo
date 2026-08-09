@@ -14,6 +14,8 @@
 
 #include "i8086.h"
 
+#include "bolo.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -51,5 +53,19 @@ const char *machine_error(const Machine *m);
 
 /// True once the guest has executed INT 20h.
 bool machine_exited(const Machine *m);
+
+/// EGA_PAGE_VISIBLE bytes of `plane` (0..3) from `page` (0 or 1).
+///
+/// A page is EGA_PAGE_SIZE (8192) bytes but only the first 8000 are displayed;
+/// this returns the displayed part, which is what gets compared.
+const uint8_t *machine_plane(const Machine *m, int plane, int page);
+
+/// The page the guest is currently drawing into, decoded from dest_seg_e at
+/// 2913:4F8A: flip_vp tests bit 1 of its high byte to choose the CRTC start
+/// address, so bit 1 of 4F8Bh is the page number.
+int machine_draw_page(const Machine *m);
+
+/// The page currently being displayed, from CRTC register 0Ch.
+int machine_display_page(const Machine *m);
 
 #endif // BOLO_MACHINE_H

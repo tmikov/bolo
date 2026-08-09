@@ -11,19 +11,78 @@ struct Machine {
   char errorBuf[128];
   bool hasError;
   bool exited;
-  /* EGA state arrives in Task 2, ports and services in Task 3. */
+
+  /// Two pages of four planes. EGA_PAGE_SIZE bytes each, of which the first
+  /// EGA_PAGE_VISIBLE are displayed.
+  uint8_t plane[EGA_PLANES][EGA_PAGE_SIZE * 2];
+  uint8_t latch[EGA_PLANES];
+  uint8_t mapMask; ///< sequencer index 2, low 4 bits
+  uint8_t readMapSelect; ///< graphics index 4
+  uint8_t dataRotate; ///< graphics index 3: bits 4-3 function, 2-0 rotate
+  uint8_t crtcStartHigh; ///< CRTC index 0Ch
+  uint8_t seqIndex, gfxIndex, crtcIndex;
+  /* Ports and BIOS/DOS services arrive in Task 3. */
 };
 
-/// Handles reads to the EGA window at A0000; for now, plain RAM. Task 2
-/// replaces the body of this function and ega_write, and nothing else.
-static uint8_t ega_read(Machine *m, uint32_t linear) {
-  return m->mem[linear];
+static void machine_fail(Machine *m, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(m->errorBuf, sizeof(m->errorBuf), fmt, ap);
+  va_end(ap);
+  m->hasError = true;
+  m->cpu.error = m->errorBuf;
 }
 
-/// Handles writes to the EGA window at A0000; for now, plain RAM. Task 2
-/// replaces the body of this function and ega_read, and nothing else.
+/// Handles reads to the EGA window at A0000: returns the plane named by read
+/// map select, and loads all four latches -- the original's read-modify-write
+/// sequences depend on every read doing this, not just ones that "look like"
+/// a draw.
+static uint8_t ega_read(Machine *m, uint32_t linear) {
+  uint32_t offset = (linear - MACHINE_EGA_BASE) & (MACHINE_EGA_WINDOW - 1);
+  if (offset >= EGA_PAGE_SIZE * 2) {
+    machine_fail(m, "EGA read beyond backed page storage: offset %04Xh", offset);
+    return 0xFF;
+  }
+  for (int p = 0; p != EGA_PLANES; ++p)
+    m->latch[p] = m->plane[p][offset];
+  return m->plane[m->readMapSelect & 3][offset];
+}
+
+/// Handles writes to the EGA window at A0000: for each plane selected by the
+/// map mask, combines the CPU byte with that plane's latch (loaded by the
+/// most recent read) through the function selected by data rotate, and
+/// stores the result. Planes whose map mask bit is clear keep their value.
 static void ega_write(Machine *m, uint32_t linear, uint8_t value) {
-  m->mem[linear] = value;
+  uint32_t offset = (linear - MACHINE_EGA_BASE) & (MACHINE_EGA_WINDOW - 1);
+  if (offset >= EGA_PAGE_SIZE * 2) {
+    machine_fail(m, "EGA write beyond backed page storage: offset %04Xh", offset);
+    return;
+  }
+
+  unsigned rotate = m->dataRotate & 0x07;
+  uint8_t rotated = (uint8_t)((value >> rotate) | (value << ((8 - rotate) & 7)));
+  unsigned function = (m->dataRotate >> 3) & 0x03;
+
+  for (int p = 0; p != EGA_PLANES; ++p) {
+    if (!(m->mapMask & (1 << p)))
+      continue;
+    uint8_t result;
+    switch (function) {
+    case 0: // replace
+      result = rotated;
+      break;
+    case 1: // AND
+      result = (uint8_t)(rotated & m->latch[p]);
+      break;
+    case 2: // OR
+      result = (uint8_t)(rotated | m->latch[p]);
+      break;
+    default: // XOR
+      result = (uint8_t)(rotated ^ m->latch[p]);
+      break;
+    }
+    m->plane[p][offset] = result;
+  }
 }
 
 static uint8_t machine_read8(void *ctx, uint32_t linear) {
@@ -44,24 +103,74 @@ static void machine_write8(void *ctx, uint32_t linear, uint8_t value) {
   m->mem[linear] = value;
 }
 
-static void machine_fail(Machine *m, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(m->errorBuf, sizeof(m->errorBuf), fmt, ap);
-  va_end(ap);
-  m->hasError = true;
-  m->cpu.error = m->errorBuf;
-}
+// EGA I/O ports. Sequencer (3C4h/3C5h) and graphics controller (3CEh/3CFh)
+// registers are index+data pairs on adjacent even/odd ports; the original
+// writes both halves with a single 16-bit "out dx,ax", which the plan-2
+// executor decomposes into out8(index port) then out8(index port + 1). The
+// odd port therefore always acts on the register most recently selected on
+// the even port.
+#define MACHINE_PORT_SEQ_INDEX 0x3C4
+#define MACHINE_PORT_SEQ_DATA 0x3C5
+#define MACHINE_PORT_GFX_INDEX 0x3CE
+#define MACHINE_PORT_GFX_DATA 0x3CF
+#define MACHINE_PORT_CRTC_INDEX 0x3D4
+#define MACHINE_PORT_CRTC_DATA 0x3D5
+#define MACHINE_PORT_INPUT_STATUS1 0x3DA
 
 static uint8_t machine_in8(void *ctx, uint16_t port) {
   Machine *m = (Machine *)ctx;
+  if (port == MACHINE_PORT_INPUT_STATUS1) {
+    // Bit 3 is vertical retrace; the original spins on it in flip_vp. Always
+    // reporting it set means the spin exits immediately.
+    return 0x08;
+  }
   machine_fail(m, "unimplemented port read %04Xh", port);
   return 0xFF;
 }
 
 static void machine_out8(void *ctx, uint16_t port, uint8_t value) {
   Machine *m = (Machine *)ctx;
-  machine_fail(m, "unimplemented port write %04Xh <- %02Xh", port, value);
+  switch (port) {
+  case MACHINE_PORT_SEQ_INDEX:
+    m->seqIndex = value;
+    return;
+  case MACHINE_PORT_SEQ_DATA:
+    if (m->seqIndex == 2) {
+      m->mapMask = value & 0x0F;
+      return;
+    }
+    machine_fail(m, "unimplemented sequencer register %02Xh <- %02Xh", m->seqIndex, value);
+    return;
+  case MACHINE_PORT_GFX_INDEX:
+    m->gfxIndex = value;
+    return;
+  case MACHINE_PORT_GFX_DATA:
+    switch (m->gfxIndex) {
+    case 3:
+      m->dataRotate = value & 0x1F;
+      return;
+    case 4:
+      m->readMapSelect = value & 0x03;
+      return;
+    default:
+      machine_fail(
+          m, "unimplemented graphics controller register %02Xh <- %02Xh", m->gfxIndex, value);
+      return;
+    }
+  case MACHINE_PORT_CRTC_INDEX:
+    m->crtcIndex = value;
+    return;
+  case MACHINE_PORT_CRTC_DATA:
+    if (m->crtcIndex == 0x0C) {
+      m->crtcStartHigh = value;
+      return;
+    }
+    machine_fail(m, "unimplemented CRTC register %02Xh <- %02Xh", m->crtcIndex, value);
+    return;
+  default:
+    machine_fail(m, "unimplemented port write %04Xh <- %02Xh", port, value);
+    return;
+  }
 }
 
 static bool machine_intercept(void *ctx, uint8_t vec) {
@@ -73,7 +182,16 @@ static bool machine_intercept(void *ctx, uint8_t vec) {
 Machine *machine_create(void) {
   // 1MB of guest memory is embedded in Machine, so Machine itself must be
   // heap-allocated (and zeroed) rather than a stack or static object.
-  return (Machine *)calloc(1, sizeof(Machine));
+  Machine *m = (Machine *)calloc(1, sizeof(Machine));
+  if (!m)
+    return NULL;
+
+  // EGA power-on state: all planes writable, replace function, plane 0
+  // readable, page 0 displayed. calloc already zeroed dataRotate,
+  // readMapSelect and crtcStartHigh; only mapMask needs a nonzero reset.
+  m->mapMask = 0x0F;
+
+  return m;
 }
 
 void machine_destroy(Machine *m) {
@@ -159,4 +277,18 @@ const char *machine_error(const Machine *m) {
 
 bool machine_exited(const Machine *m) {
   return m->exited;
+}
+
+const uint8_t *machine_plane(const Machine *m, int plane, int page) {
+  return m->plane[plane] + (page ? EGA_PAGE_SIZE : 0);
+}
+
+int machine_draw_page(const Machine *m) {
+  // dest_seg_e is at 2913:4F8A; flip_vp tests bit 1 of its high byte.
+  uint8_t high = machine_peek(m, i8086_linear(MACHINE_LOAD_SEG, 0x4F8B));
+  return (high & 0x02) ? 1 : 0;
+}
+
+int machine_display_page(const Machine *m) {
+  return (m->crtcStartHigh & 0x20) ? 1 : 0;
 }

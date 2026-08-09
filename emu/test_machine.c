@@ -99,6 +99,80 @@ int main(void) {
   }
   expect_u16("took the jae (memory check passed)", cpu->ip, 0x010D);
 
+  // ---------------------------------------------------------------- EGA ----
+  //
+  // Drive the registers exactly as the original does: an "out dx,ax" to an
+  // index port writes the index in AL and the data in AH.
+  {
+    I8086 *c = machine_cpu(m);
+    void *ctx = c->ctx;
+
+// Helper shorthand: the 16-bit index+data write the original always uses.
+#define OUT16(port, ax)                             \
+  do {                                              \
+    c->out8(ctx, (port), (uint8_t)((ax) & 0xFF));   \
+    c->out8(ctx, (port) + 1, (uint8_t)((ax) >> 8)); \
+  } while (0)
+
+    // Map mask = all four planes, function = replace.
+    OUT16(0x3C4, 0x0F02);
+    OUT16(0x3CE, 0x0003);
+
+    c->write8(ctx, MACHINE_EGA_BASE + 0, 0xA5);
+    for (int p = 0; p != EGA_PLANES; ++p)
+      expect_u8("write to all planes", machine_plane(m, p, 0)[0], 0xA5);
+
+    // Map mask = plane 1 only: the others must keep their value.
+    OUT16(0x3C4, 0x0202);
+    c->write8(ctx, MACHINE_EGA_BASE + 0, 0x3C);
+    expect_u8("masked write, plane 0 untouched", machine_plane(m, 0, 0)[0], 0xA5);
+    expect_u8("masked write, plane 1 written", machine_plane(m, 1, 0)[0], 0x3C);
+    expect_u8("masked write, plane 2 untouched", machine_plane(m, 2, 0)[0], 0xA5);
+
+    // Reads return only the plane named by read map select, and load all four
+    // latches. Select plane 3 -- the value the original uses throughout.
+    OUT16(0x3CE, 0x0304);
+    expect_u8("read returns read-map-select plane", c->read8(ctx, MACHINE_EGA_BASE + 0), 0xA5);
+
+    // The OR function combines the CPU byte with the latch loaded by that read.
+    // Latches now hold A5/3C/A5/A5. Write 0x0F to all planes with function=OR.
+    OUT16(0x3C4, 0x0F02);
+    OUT16(0x3CE, 0x1003); // index 3, data 10h -> function OR
+    c->write8(ctx, MACHINE_EGA_BASE + 0, 0x0F);
+    expect_u8("OR against latch, plane 0", machine_plane(m, 0, 0)[0], (uint8_t)(0xA5 | 0x0F));
+    expect_u8("OR against latch, plane 1", machine_plane(m, 1, 0)[0], (uint8_t)(0x3C | 0x0F));
+
+    // XOR, the other function the game uses for erasing. Writes never reload
+    // the latches (only reads do, and the last one happened above, before
+    // the OR write) so this XORs against the original A5 latch, not against
+    // the AF the OR write just stored.
+    OUT16(0x3CE, 0x1803); // function 11b -> XOR
+    c->write8(ctx, MACHINE_EGA_BASE + 0, 0xFF);
+    expect_u8("XOR against latch, plane 0", machine_plane(m, 0, 0)[0], (uint8_t)(0xA5 ^ 0xFF));
+
+    // Back to replace so later tests are not surprised.
+    OUT16(0x3CE, 0x0003);
+
+    // The two pages are distinct storage.
+    OUT16(0x3C4, 0x0F02);
+    c->write8(ctx, MACHINE_EGA_BASE + EGA_PAGE_SIZE, 0x77);
+    expect_u8("page 1 written", machine_plane(m, 0, 1)[0], 0x77);
+    expect_u8("page 0 unaffected", machine_plane(m, 0, 0)[0], (uint8_t)(0xA5 ^ 0xFF));
+
+    // CRTC start address high selects the displayed page: 0 or 20h.
+    OUT16(0x3D4, 0x000C);
+    expect_u8("display page 0", (uint8_t)machine_display_page(m), 0);
+    OUT16(0x3D4, 0x200C);
+    expect_u8("display page 1", (uint8_t)machine_display_page(m), 1);
+
+    // 3DAh bit 3 reads as always set, so flip_vp's retrace spin exits at once.
+    if (!(c->in8(ctx, 0x3DA) & 0x08)) {
+      fprintf(stderr, "FAIL: 3DAh bit 3 must read set\n");
+      ++g_failures;
+    }
+#undef OUT16
+  }
+
   machine_destroy(m);
 
   if (g_failures) {
