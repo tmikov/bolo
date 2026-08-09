@@ -17,12 +17,15 @@ preserve the original's semantics (including its overflow and aliasing behavior)
 
 ## Build and run
 
-There is no test suite, no linter config beyond `.clang-format`, and no CI.
+There is no linter config beyond `.clang-format` and no CI. Tests are CTest targets under
+`emu/`, run with `ctest` from the build directory.
+
+**Always configure with the Ninja generator** — `-G Ninja`. Don't use the Makefile default.
 
 **Native (macOS and Linux).**
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ```
 
 **Headless.** `emu/bolotest` runs the attract demo with no window and writes one PPM per
@@ -39,7 +42,7 @@ supports GL on Linux. `-pthread` comes from `Threads::Threads` and is mandatory:
 **Wasm.** The Emscripten branch of `src/CMakeLists.txt` sets `SOKOL_GLES2`, an `.html` suffix, and
 `--shell-file src/shell.html`; `.gitignore` lists `embuild/`, so the build directory was
 conventionally named that. The exact command is not recorded anywhere in the repo; the standard
-form is `emcmake cmake -S . -B embuild -DCMAKE_BUILD_TYPE=Release && cmake --build embuild`.
+form is `emcmake cmake -S . -B embuild -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build embuild`.
 The published build lives on the orphan `gh-pages` branch (build artifacts only — `bolo.js`,
 `bolo.wasm`, `index.html` — with no shared history with `master`).
 
