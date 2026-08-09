@@ -39,7 +39,11 @@ void machine_destroy(Machine *m);
 /// data area and the interrupt vector table. Returns false on I/O failure.
 bool machine_load_com(Machine *m, const char *path, uint16_t seg);
 
-/// The CPU, with bus callbacks already wired to this machine.
+/// The CPU belonging to this machine.
+///
+/// Its bus callbacks are wired by machine_load_com(), not by machine_create():
+/// on a machine that has not loaded an image they are still NULL, and stepping
+/// it dereferences them. Load first, then drive.
 I8086 *machine_cpu(Machine *m);
 
 /// Read one byte of guest memory without disturbing EGA latches.
