@@ -68,4 +68,10 @@ int machine_draw_page(const Machine *m);
 /// The page currently being displayed, from CRTC register 0Ch.
 int machine_display_page(const Machine *m);
 
+/// Make `scanCode` the next byte port 60h returns, and raise INT 09h.
+///
+/// Unused by the attract-demo comparison -- the demo needs no input -- but the
+/// keyboard path is part of the machine and cheap to expose.
+void machine_press_key(Machine *m, uint8_t scanCode);
+
 #endif // BOLO_MACHINE_H

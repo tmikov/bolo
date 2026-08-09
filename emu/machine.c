@@ -21,7 +21,9 @@ struct Machine {
   uint8_t dataRotate; ///< graphics index 3: bits 4-3 function, 2-0 rotate
   uint8_t crtcStartHigh; ///< CRTC index 0Ch
   uint8_t seqIndex, gfxIndex, crtcIndex;
-  /* Ports and BIOS/DOS services arrive in Task 3. */
+
+  uint8_t speakerPort; ///< port 61h: last value written, read back verbatim.
+  uint8_t scanCode; ///< port 60h: the pending keyboard scan code.
 };
 
 static void machine_fail(Machine *m, const char *fmt, ...) {
@@ -117,15 +119,25 @@ static void machine_write8(void *ctx, uint32_t linear, uint8_t value) {
 #define MACHINE_PORT_CRTC_DATA 0x3D5
 #define MACHINE_PORT_INPUT_STATUS1 0x3DA
 
+#define MACHINE_PORT_KEYBOARD_DATA 0x60
+#define MACHINE_PORT_SPEAKER 0x61
+#define MACHINE_PORT_PIC_EOI 0x20
+
 static uint8_t machine_in8(void *ctx, uint16_t port) {
   Machine *m = (Machine *)ctx;
-  if (port == MACHINE_PORT_INPUT_STATUS1) {
+  switch (port) {
+  case MACHINE_PORT_INPUT_STATUS1:
     // Bit 3 is vertical retrace; the original spins on it in flip_vp. Always
     // reporting it set means the spin exits immediately.
     return 0x08;
+  case MACHINE_PORT_KEYBOARD_DATA:
+    return m->scanCode;
+  case MACHINE_PORT_SPEAKER:
+    return m->speakerPort;
+  default:
+    machine_fail(m, "unimplemented port read %04Xh", port);
+    return 0xFF;
   }
-  machine_fail(m, "unimplemented port read %04Xh", port);
-  return 0xFF;
 }
 
 static void machine_out8(void *ctx, uint16_t port, uint8_t value) {
@@ -167,16 +179,103 @@ static void machine_out8(void *ctx, uint16_t port, uint8_t value) {
     }
     machine_fail(m, "unimplemented CRTC register %02Xh <- %02Xh", m->crtcIndex, value);
     return;
+  case MACHINE_PORT_INPUT_STATUS1:
+    // Feature control register, aliased onto this port on write. Sound and
+    // the feature bits are out of scope for the comparison.
+    return;
+  case MACHINE_PORT_SPEAKER:
+    m->speakerPort = value;
+    return;
+  case MACHINE_PORT_PIC_EOI:
+    // End-of-interrupt: accepted and ignored. There is no interrupt
+    // controller model to acknowledge.
+    return;
   default:
     machine_fail(m, "unimplemented port write %04Xh <- %02Xh", port, value);
     return;
   }
 }
 
+/// Reinitialize the EGA register file to its post-mode-set state. Real BIOS
+/// mode sets reprogram the sequencer, graphics controller and CRTC from a
+/// per-mode table; the fields this machine models all return to their
+/// power-on values (see machine_create), which is what modes 0Dh and 03h both
+/// want here: all planes writable, replace function, plane 0 readable, page 0
+/// displayed.
+static void machine_reset_ega_regs(Machine *m) {
+  m->mapMask = 0x0F;
+  m->dataRotate = 0;
+  m->readMapSelect = 0;
+  m->crtcStartHigh = 0;
+  m->seqIndex = 0;
+  m->gfxIndex = 0;
+  m->crtcIndex = 0;
+}
+
 static bool machine_intercept(void *ctx, uint8_t vec) {
   Machine *m = (Machine *)ctx;
-  machine_fail(m, "unimplemented interrupt %02Xh", vec);
-  return false;
+  I8086 *c = &m->cpu;
+  uint8_t ah = (uint8_t)(c->reg[I8086_AX] >> 8);
+  uint8_t al = (uint8_t)(c->reg[I8086_AX] & 0xFF);
+
+  switch (vec) {
+  case 0x10: // video services
+    switch (ah) {
+    case 0x00: // set video mode
+      if (al != 0x0D && al != 0x03) {
+        machine_fail(m, "unimplemented INT 10h AH=00h video mode %02Xh", al);
+        return true;
+      }
+      machine_reset_ega_regs(m);
+      return true;
+    case 0x05: // select active display page
+      // crtcStartHigh's bit 5 is what machine_display_page reads back, so this
+      // must update the same field clear_vp0's AH=05h call feeds -- see
+      // machine_display_page and the Task 2 handoff note.
+      m->crtcStartHigh = (uint8_t)((m->crtcStartHigh & ~0x20) | ((al & 1) ? 0x20 : 0));
+      return true;
+    case 0x0E: // teletype output
+      fputc((int)al, stdout);
+      return true;
+    default:
+      machine_fail(m, "unimplemented INT 10h AH=%02Xh", ah);
+      return true;
+    }
+  case 0x21: // DOS services
+    switch (ah) {
+    case 0x25: { // set interrupt vector AL from DS:DX
+      uint16_t seg = c->sreg[I8086_DS];
+      uint16_t off = c->reg[I8086_DX];
+      uint32_t entry = (uint32_t)al * 4;
+      machine_write8(m, entry + 0, (uint8_t)(off & 0xFF));
+      machine_write8(m, entry + 1, (uint8_t)(off >> 8));
+      machine_write8(m, entry + 2, (uint8_t)(seg & 0xFF));
+      machine_write8(m, entry + 3, (uint8_t)(seg >> 8));
+      return true;
+    }
+    case 0x09: { // print $-terminated string at DS:DX
+      uint16_t seg = c->sreg[I8086_DS];
+      uint16_t off = c->reg[I8086_DX];
+      uint8_t ch;
+      while ((ch = machine_read8(m, i8086_linear(seg, off))) != '$') {
+        fputc((int)ch, stdout);
+        ++off;
+      }
+      return true;
+    }
+    default:
+      machine_fail(m, "unimplemented INT 21h AH=%02Xh", ah);
+      return true;
+    }
+  case 0x20: // program terminate
+    m->exited = true;
+    return true;
+  default:
+    // Not one of the three vectors this machine services: fall through to the
+    // guest's own IVT. This is how BOLO's own INT 08h and INT 09h handlers,
+    // installed via INT 21h AH=25h, get reached.
+    return false;
+  }
 }
 
 Machine *machine_create(void) {
@@ -291,4 +390,9 @@ int machine_draw_page(const Machine *m) {
 
 int machine_display_page(const Machine *m) {
   return (m->crtcStartHigh & 0x20) ? 1 : 0;
+}
+
+void machine_press_key(Machine *m, uint8_t scanCode) {
+  m->scanCode = scanCode;
+  i8086_interrupt(&m->cpu, 0x09);
 }

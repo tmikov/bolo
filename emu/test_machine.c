@@ -173,6 +173,86 @@ int main(void) {
 #undef OUT16
   }
 
+  // -------------------------------------------------------------- ports ----
+  {
+    I8086 *c = machine_cpu(m);
+    void *ctx = c->ctx;
+
+    // Port 61h is the speaker gate: writes are recorded, reads return the last
+    // value written. Sound is out of scope for the comparison, but the port
+    // must not be an error.
+    c->out8(ctx, 0x61, 0x03);
+    expect_u8("speaker port round trip", c->in8(ctx, 0x61) & 0x03, 0x03);
+
+    // Port 20h is the PIC end-of-interrupt: accepted and ignored.
+    c->out8(ctx, 0x20, 0x20);
+    if (machine_error(m)) {
+      fprintf(stderr, "FAIL: EOI to port 20h raised \"%s\"\n", machine_error(m));
+      ++g_failures;
+    }
+
+    // Port 60h returns the injected scan code.
+    machine_press_key(m, 0x39); // space
+    expect_u8("keyboard data port", c->in8(ctx, 0x60), 0x39);
+  }
+
+  // ------------------------------------------------------ BIOS services ----
+  {
+    I8086 *c = machine_cpu(m);
+
+    // INT 21h AH=25h sets an interrupt vector from DS:DX. This is how BOLO
+    // installs its own INT 08h and INT 09h handlers, so it must actually write
+    // the guest's IVT -- the CPU later vectors through it.
+    c->reg[I8086_AX] = 0x2508;
+    c->sreg[I8086_DS] = MACHINE_LOAD_SEG;
+    c->reg[I8086_DX] = 0x02C8; // int_08h_entry
+    if (!c->intercept(c->ctx, 0x21)) {
+      fprintf(stderr, "FAIL: INT 21h AH=25h was not serviced\n");
+      ++g_failures;
+    }
+    expect_u16("IVT 8 offset", machine_peek16(m, 8 * 4), 0x02C8);
+    expect_u16("IVT 8 segment", machine_peek16(m, 8 * 4 + 2), MACHINE_LOAD_SEG);
+
+    // INT 10h AH=00h sets the video mode; BOLO asks for 0Dh.
+    c->reg[I8086_AX] = 0x000D;
+    if (!c->intercept(c->ctx, 0x10)) {
+      fprintf(stderr, "FAIL: INT 10h AH=00h was not serviced\n");
+      ++g_failures;
+    }
+
+    // INT 10h AH=05h selects the active display page.
+    c->reg[I8086_AX] = 0x0501;
+    if (!c->intercept(c->ctx, 0x10)) {
+      fprintf(stderr, "FAIL: INT 10h AH=05h was not serviced\n");
+      ++g_failures;
+    }
+    expect_u8("INT 10h AH=05h set page 1", (uint8_t)machine_display_page(m), 1);
+
+    // INT 20h terminates.
+    if (!c->intercept(c->ctx, 0x20)) {
+      fprintf(stderr, "FAIL: INT 20h was not serviced\n");
+      ++g_failures;
+    }
+    if (!machine_exited(m)) {
+      fprintf(stderr, "FAIL: INT 20h did not mark the machine exited\n");
+      ++g_failures;
+    }
+  }
+
+  // An unimplemented service must be a hard error, never a silent success.
+  {
+    Machine *m2 = machine_create();
+    machine_load_com(m2, BOLO_COM_PATH, MACHINE_LOAD_SEG);
+    I8086 *c2 = machine_cpu(m2);
+    c2->reg[I8086_AX] = 0x4C00; // INT 21h AH=4Ch, which BOLO never calls
+    c2->intercept(c2->ctx, 0x21);
+    if (!machine_error(m2)) {
+      fprintf(stderr, "FAIL: an unimplemented DOS function must set an error\n");
+      ++g_failures;
+    }
+    machine_destroy(m2);
+  }
+
   machine_destroy(m);
 
   if (g_failures) {
