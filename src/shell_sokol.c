@@ -222,6 +222,7 @@ static void shell_play_sound(int ch_delay, int cl_length) {
 static void bolo_init(void) {
   bolo_reset();
   bolo_sound_sink = shell_play_sound;
+  sound_queue_init(&state.fx);
 
   saudio_setup(&(saudio_desc){
       //.sample_rate = 44100,
