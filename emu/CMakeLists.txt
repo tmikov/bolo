@@ -27,12 +27,19 @@ add_executable(test_lst test_lst.c)
 target_link_libraries(test_lst bolo_lst)
 add_test(NAME lst COMMAND test_lst)
 
+add_library(bolo_i8086 STATIC i8086.c)
+target_include_directories(bolo_i8086 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(test_decode test_decode.c)
+target_link_libraries(test_decode bolo_i8086 bolo_lst)
+add_test(NAME decode COMMAND test_decode)
+
 # Unlike src/bolo.c, which is deliberately faithful to 8086 assembly and
 # triggers pre-existing -Wextra warnings out of scope here, emu/ code is
 # ordinary C with no such excuse.
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   foreach(target test_link bolo_ppm test_ppm bolotest test_ega_render
-                 bolo_lst test_lst)
+                 bolo_lst test_lst bolo_i8086 test_decode)
     target_compile_options(${target} PRIVATE -Wall -Wextra)
   endforeach()
 endif()
