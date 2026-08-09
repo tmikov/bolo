@@ -17,6 +17,7 @@
 #include "ppm.h"
 #include "runner.h"
 
+#include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -323,7 +324,11 @@ static bool write_divergence_images(
 }
 
 /// Read the ratchet's single integer. Returns false, having reported why, if
-/// the file cannot be read or does not hold one non-negative number.
+/// the file cannot be read or does not hold exactly one non-negative number.
+///
+/// The trailing check matters more than it looks: this file is the project's
+/// fidelity metric, so "5abc" quietly parsing as 5 would silently lower the
+/// bar the whole harness is measured against.
 static bool read_baseline(const char *path, long *value) {
   FILE *f = fopen(path, "r");
   if (!f) {
@@ -332,6 +337,8 @@ static bool read_baseline(const char *path, long *value) {
   }
   long parsed = -1;
   bool ok = fscanf(f, "%ld", &parsed) == 1 && parsed >= 0;
+  for (int c; ok && (c = fgetc(f)) != EOF;)
+    ok = isspace(c) != 0;
   fclose(f);
   if (!ok) {
     fprintf(stderr, "\"%s\": expected a single non-negative integer\n", path);
@@ -343,14 +350,19 @@ static bool read_baseline(const char *path, long *value) {
 
 /// Run the port until bolo_frame_count() == frame, spending at most the
 /// remaining tick budget. Returns false if the budget ran out first.
-static bool advance_port_to_frame(unsigned frame, long pump, long *ticks, long maxTicks) {
-  while (bolo_frame_count() < frame) {
-    if (*ticks >= maxTicks)
-      return false;
+///
+/// `*spent` receives the ticks this call consumed, which is what separates
+/// "the budget was simply too small" from "the port stopped producing frames":
+/// the former spends a frame's worth of ticks, the latter the whole remainder.
+static bool
+advance_port_to_frame(unsigned frame, long pump, long *ticks, long maxTicks, long *spent) {
+  long start = *ticks;
+  while (bolo_frame_count() < frame && *ticks < maxTicks) {
     bolo_run_tick((int)pump);
     ++*ticks;
   }
-  return true;
+  *spent = *ticks - start;
+  return bolo_frame_count() >= frame;
 }
 
 /// Run both sides and compare their planes frame by frame. Returns a process
@@ -410,11 +422,21 @@ static int run_compare(
   long ticks = 0;
   long compared = 0;
   long firstDiff = -1;
-  const char *stopped = "the tick budget ran out";
+  char stoppedBuf[160];
+  const char *stopped = "nothing ran";
 
   for (long k = 1;; ++k) {
-    if (!advance_port_to_frame((unsigned)k, pump, &ticks, maxTicks))
+    long spent = 0;
+    if (!advance_port_to_frame((unsigned)k, pump, &ticks, maxTicks, &spent)) {
+      snprintf(
+          stoppedBuf,
+          sizeof(stoppedBuf),
+          "the tick budget ran out, %ld of them spent waiting for the port's frame %ld",
+          spent,
+          k);
+      stopped = stoppedBuf;
       break;
+    }
     if (bolo_frame_count() != (unsigned)k) {
       fprintf(
           stderr, "the port jumped from frame %ld to %u in one tick\n", k - 1, bolo_frame_count());
@@ -474,16 +496,24 @@ static int run_compare(
   if (status != 0)
     return status;
 
+  // A run that compared nothing has measured nothing, and "matched 0 frames"
+  // against a baseline of 0 would report that as success. Whatever kept the
+  // frames from arriving is the finding; it is not a passing comparison.
+  if (compared == 0) {
+    fprintf(stderr, "no frames were compared in %ld ticks: %s\n", ticks, stopped);
+    return 1;
+  }
+
   long matched = firstDiff < 0 ? compared : firstDiff - 1;
   if (firstDiff < 0)
-    printf("no divergence in %ld frames (%s after %ld ticks)\n", compared, stopped, ticks);
+    printf("no divergence in %ld frames; stopped after %ld ticks: %s\n", compared, ticks, stopped);
   else
     printf(
-        "compared %ld frames, first divergence at %ld (%s after %ld ticks)\n",
+        "compared %ld frames, first divergence at %ld; stopped after %ld ticks: %s\n",
         compared,
         firstDiff,
-        stopped,
-        ticks);
+        ticks,
+        stopped);
 
   if (!baselinePath) {
     printf("matched %ld frames\n", matched);
@@ -511,6 +541,9 @@ int main(int argc, char **argv) {
   const char *baseline = NULL;
   bool compare = false;
   bool continuePastDiff = false;
+  bool framesSet = false;
+  bool maxTicksSet = false;
+  bool ticksSet = false;
 
   for (int i = 1; i < argc; ++i) {
     bool last = i + 1 >= argc;
@@ -520,14 +553,17 @@ int main(int argc, char **argv) {
       continuePastDiff = true;
     } else if (strcmp(argv[i], "--ticks") == 0 && !last) {
       compareTicks = parse_positive("--ticks", argv[++i]);
+      ticksSet = true;
     } else if (strcmp(argv[i], "--baseline") == 0 && !last) {
       baseline = argv[++i];
     } else if (strcmp(argv[i], "--frames") == 0 && !last) {
       frames = parse_positive("--frames", argv[++i]);
+      framesSet = true;
     } else if (strcmp(argv[i], "--pump") == 0 && !last) {
       pump = parse_positive("--pump", argv[++i]);
     } else if (strcmp(argv[i], "--max-ticks") == 0 && !last) {
       maxTicks = parse_positive("--max-ticks", argv[++i]);
+      maxTicksSet = true;
     } else if (strcmp(argv[i], "--out") == 0 && !last) {
       out = argv[++i];
     } else if (strcmp(argv[i], "--original") == 0 && !last) {
@@ -550,8 +586,21 @@ int main(int argc, char **argv) {
     fprintf(stderr, "--compare runs both sides; it cannot be combined with --original\n");
     return 2;
   }
-  if (!compare && (baseline || continuePastDiff)) {
-    fprintf(stderr, "--baseline and --continue-past-diff only apply to --compare\n");
+  // A flag that applies to another mode is rejected rather than ignored, in
+  // both directions: silently running a different number of frames than was
+  // asked for is how a harness comes to measure something nobody intended.
+  if (!compare && (baseline || continuePastDiff || ticksSet)) {
+    const char *flag = baseline ? "--baseline"
+        : continuePastDiff      ? "--continue-past-diff"
+                                : "--ticks";
+    fprintf(stderr, "%s only applies to --compare\n", flag);
+    return 2;
+  }
+  if (compare && (framesSet || maxTicksSet)) {
+    fprintf(
+        stderr,
+        "%s does not apply to --compare; bound the run with --ticks\n",
+        framesSet ? "--frames" : "--max-ticks");
     return 2;
   }
 
