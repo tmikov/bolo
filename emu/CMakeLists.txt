@@ -16,11 +16,23 @@ add_executable(test_ega_render test_ega_render.c)
 target_link_libraries(test_ega_render ega_render)
 add_test(NAME ega_render COMMAND test_ega_render)
 
+# The 8086 interpreter and its LST oracle. Standalone: no bologame dependency.
+add_library(bolo_lst STATIC lst.c)
+target_include_directories(bolo_lst PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(bolo_lst PUBLIC
+    BOLO_LST_PATH="${CMAKE_SOURCE_DIR}/disasm/BOLO.LST"
+    BOLO_COM_PATH="${CMAKE_SOURCE_DIR}/disasm/BOLO.COM")
+
+add_executable(test_lst test_lst.c)
+target_link_libraries(test_lst bolo_lst)
+add_test(NAME lst COMMAND test_lst)
+
 # Unlike src/bolo.c, which is deliberately faithful to 8086 assembly and
 # triggers pre-existing -Wextra warnings out of scope here, emu/ code is
 # ordinary C with no such excuse.
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-  foreach(target test_link bolo_ppm test_ppm bolotest test_ega_render)
+  foreach(target test_link bolo_ppm test_ppm bolotest test_ega_render
+                 bolo_lst test_lst)
     target_compile_options(${target} PRIVATE -Wall -Wextra)
   endforeach()
 endif()
