@@ -12,6 +12,7 @@
 #include "blit.h"
 
 #include "bolo.h"
+#include "ega_render.h"
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -20,42 +21,6 @@
 
 /// The EGA bitplanes converted to RGB here.
 static RGBA8 g_rgb_screen[EGA_WIDTH_POT * EGA_HEIGHT_POT];
-
-/// Convert the completed EGA frame to RGB into g_rgb_screen.
-static void ega_to_rgb(void) {
-  const uint8_t *plane0 = bolo_plane(0);
-  const uint8_t *plane1 = bolo_plane(1);
-  const uint8_t *plane2 = bolo_plane(2);
-  const uint8_t *plane3 = bolo_plane(3);
-  const RGBA8 *palette = bolo_palette();
-  RGBA8 *out = g_rgb_screen;
-  unsigned ofs = 0;
-
-  for (unsigned row = 0; row != EGA_HEIGHT; ++row) {
-    unsigned pixcnt = EGA_STRIDE;
-    do {
-      uint8_t bits0 = plane0[ofs];
-      uint8_t bits1 = plane1[ofs];
-      uint8_t bits2 = plane2[ofs];
-      uint8_t bits3 = plane3[ofs];
-      ++ofs;
-
-      unsigned bitcnt = 8;
-      do {
-        unsigned index = ((bits0 & 0x80) >> 7) | ((bits1 & 0x80) >> 6) | ((bits2 & 0x80) >> 5) |
-            ((bits3 & 0x80) >> 4);
-
-        *out++ = palette[index];
-
-        bits0 <<= 1;
-        bits1 <<= 1;
-        bits2 <<= 1;
-        bits3 <<= 1;
-      } while (--bitcnt);
-    } while (--pixcnt);
-    out += EGA_WIDTH_POT - EGA_WIDTH;
-  }
-}
 
 #define SOUND_QUEUE_CAPACITY 8192
 
@@ -184,7 +149,13 @@ static void bolo_sound_cb(float *buffer, int num_frames, int num_channels) {
 }
 
 static void bolo_update_screen() {
-  ega_to_rgb();
+  const uint8_t *planes[EGA_PLANES] = {
+      bolo_plane(0),
+      bolo_plane(1),
+      bolo_plane(2),
+      bolo_plane(3),
+  };
+  ega_screen_to_rgba(planes, bolo_palette(), g_rgb_screen, EGA_WIDTH_POT);
 
   sg_update_image(
       state.bind.fs_images[SLOT_tex],
