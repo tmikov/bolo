@@ -1,166 +1,158 @@
 # HANDOFF
 
-Written 2026-08-08, at the end of the session that implemented plan 2 of the fidelity
-harness. This describes a point in time — replace or delete it once plan 3 lands.
+Written 2026-08-09, at the end of the session that implemented plan 3 of the fidelity
+harness. **All three plans are done.** This describes a point in time — replace or delete it
+once the first divergence is closed and the baseline moves off 0.
 
-## Where things stand
+## The headline
 
-Branch `work` at `f51b03e`, 26 commits ahead of `master`. `ctest` is 10/10 green from a
-Ninja build, the build is warning-free under `-Wall -Wextra`, and
-`clang-format --dry-run -Werror emu/*.c emu/*.h` exits 0.
+The harness works, and it has an answer.
 
-**Plans 1 and 2 are complete.**
+`disasm/BOLO.COM` — the original 1993 binary — now boots and plays under an 8086 interpreter
+written from its own disassembly, alongside the C port, with their EGA planes compared frame
+by frame.
 
-- **Plan 1** (the headless seam) split the sokol front end out of `src/bolo.c`. The game
-  is the `bologame` library driven through `src/bolo.h`; `src/shell_sokol.c` is the
-  windowed front end and `emu/bolotest.c` the headless one.
-- **Plan 2** (this session) built the 8086 interpreter that will execute the original
-  `disasm/BOLO.COM`. Nothing under `src/` or `disasm/` changed.
+**At the first comparable frame, 31,960 of 32,000 bytes match.**
+
+The 40 that differ are all in the right-hand status panel, bounding box `x 232..279,
+y 72..178`, and they are exactly two things:
+
+1. The original fills a 2x14 light-blue segment at the left of the gauge bar (`x 232..233,
+   y 72..85`). The port leaves it empty.
+2. The port plots six red enemy-base dots on the radar. The original plots none.
+
+The maze, the ship, the title, the score, the ship icons, the 2x2 base indicator and the
+compass needle match **byte for byte**. 131 frames diverge only inside that panel; from frame
+132 the whole screen diverges, because by then the two sides have scrolled the view
+differently. All 440 frames of the attract demo were compared, ending cleanly at the guest's
+own `INT 20h`.
+
+**`emu/baseline.txt` therefore reads `0`, and that number badly understates the state of the
+port.** It means "the port diverges at the first frame it is possible to compare" — not
+"nothing matches". Read the paragraph above before drawing any conclusion from the file.
+
+Reproduce it with:
+
+```sh
+./build/emu/bolotest --compare --ticks 400 --out /tmp/cmp --continue-past-diff
+python3 -c "from PIL import Image; Image.open('/tmp/cmp/diff-00001.ppm').save('/tmp/d.png')"
+```
+
+## What to do next
+
+**Close the two panel differences.** They are the smallest, best-characterised bugs in the
+port, they are the only thing standing between the project and a nonzero fidelity number, and
+the harness will tell you the moment you have fixed them. Start with the radar dots — the port
+draws something the original does not, which is usually the easier direction.
+
+Then commit the new baseline. The tool prints `IMPROVED: update emu/baseline.txt to N`; a
+human commits it. **The tool never rewrites that file**, because a number that always agrees
+with the last run is not a ratchet.
+
+**Do not change the comparison, the alignment or the baseline to make a difference disappear.**
+The difference is the finding. That rule is in `CLAUDE.md` too.
 
 ## Read these first, in this order
 
-1. `docs/superpowers/specs/2026-08-07-bolo-fidelity-harness-design.md` — the design for
-   all three plans. **This is the authority.** Its "What was verified about the original",
-   "Alternatives considered" and "Known limitations" sections record decisions that were
-   argued through once with evidence; don't re-litigate them without new information.
-2. `docs/superpowers/plans/2026-08-08-bolo-8086-interpreter.md` — what plan 2 did and why.
-   Its "Measured facts this plan is built on" section **supersedes the spec's estimates**
-   (the spec's "3302 instructions, ~60 opcodes" was an early undercount).
-3. `CLAUDE.md` — build commands, architecture, the `disasm/` workflow.
+1. `CLAUDE.md` — build commands, the architecture, the `disasm/` workflow, and a section on
+   running the comparison.
+2. `docs/superpowers/plans/2026-08-09-bolo-machine-and-comparison.md` — what plan 3 built and
+   why. Its "Measured facts this plan is built on" section is the reference for the original's
+   hardware surface.
+3. `docs/superpowers/specs/2026-08-07-bolo-fidelity-harness-design.md` — the original design
+   for all three plans. Still useful for the rationale, but **several of its specifics were
+   corrected by measurement** — see "Where the spec is wrong" below.
 
-## What plan 2 delivered
+## Where things stand
 
-| File | Lines | What it is |
-| --- | --- | --- |
-| `emu/lst.{c,h}` | 288 | Parser for `disasm/BOLO.LST`, the Sourcer disassembly. Yields 3439 `LstInsn` records. |
-| `emu/i8086.{c,h}` | 1712 | The CPU: decoder, ALU, executor. Knows nothing about EGA or DOS. |
-| `emu/test_lst.c` | 130 | Parser test, including a byte-for-byte check against `BOLO.COM`. |
-| `emu/test_decode.c` | 114 | The decoder oracle. |
-| `emu/test_alu.c` | 199 | 30 hand-derived flag vectors. |
-| `emu/test_exec.c` | 577 | Execution tests over a flat-RAM toy machine. |
+Branch `work`, 38 commits ahead of `master`, nothing pushed. `ctest` is 14/14 green, the build
+is warning-free under `-Wall -Wextra`, and `clang-format --dry-run -Werror emu/*.c emu/*.h`
+exits 0. Across all of plan 3, **nothing under `src/` or `disasm/` changed** — the thing under
+test was never touched to flatter the result.
 
-CMake targets `bolo_lst` (carrying `BOLO_LST_PATH` and `BOLO_COM_PATH` as PUBLIC compile
-definitions) and `bolo_i8086`. Neither links `bologame`; only `test_decode` links both.
+| Component | What it is |
+| --- | --- |
+| `emu/lst.{c,h}` | Parses `disasm/BOLO.LST` into 3439 instruction records, each verified byte-for-byte against `BOLO.COM`. |
+| `emu/i8086.{c,h}` | The CPU: decoder (validated at all 3439 addresses), ALU with exact 8086 flag semantics, executor. |
+| `emu/machine.{c,h}` | The XT: 1MB memory, BIOS data area, EGA planes at A0000, seven I/O ports, five BIOS/DOS services. |
+| `emu/runner.{c,h}` | The run loop: tick delivery, frame capture, runaway guards. |
+| `emu/bolotest.c` | Three modes — dump the port's frames, dump the original's, or compare them. |
+| `emu/baseline.txt` | The ratchet. |
+| `emu/golden-original.txt` | 60 FNV-1a checksums pinning the *original* side, independent of the port. |
 
-### Measured facts about the original, verified during plan 2
+Tests: `link`, `ppm`, `ega_render`, `lst`, `decode`, `alu`, `exec`, `machine`, `runner`,
+`golden`, `headless_frames`, `determinism`, `pump_invariance`, `compare`.
 
-All measured from `disasm/BOLO.LST` and `disasm/BOLO.COM`, not estimated:
+## Where the spec is wrong
 
-- **3439 instructions**, spanning offsets `0100h`..`2F53h`, no duplicate addresses, and
-  every one's bytes match `BOLO.COM` exactly. That last property is what earns the LST the
-  right to be the decoder's oracle, and `test_lst` asserts it.
-- **169 distinct opcode keys** (opcode byte plus the ModRM `reg` field for group opcodes).
-- Prefixes used: `rep` (F3) ×21, `es:` (26) ×31, `cs:` (2E) ×4. No `repne`, no `lock`,
-  no `ss:`/`ds:` override.
-- **Overflow is write-only in this program.** BOLO contains no signed conditional jump
-  (`70`/`71` and `7C`-`7F` are absent), no `pushf`/`popf`, and `OF` is bit 11 so the single
-  `lahf` cannot observe it. This retires a whole class of concern — see below.
+The design spec predates the binary being instrumented this closely. Measured corrections:
 
-## Two corrections plan 3 must not lose
+- **Tick delivery.** The spec says fire `INT 08h` when the guest spins at the gameplay frame
+  gate `2913:028E`. That hangs the harness: the title screen waits on the same `time_tick` at
+  `2913:11E5` and never exits. Ticks are delivered on a generic idle rule instead — see
+  `IDLE_THRESHOLD` in `emu/runner.h`, which documents the deviation and its measured cost.
+- **`flip_vp` and the CRTC.** The spec is right that the CRTC is written, but note `flip_vp`
+  sets `DX = 3DAh`, spins, then does `mov dl,0D4h` — a *half-register* write turning DX into
+  `3D4h`. A port scan tracking only `mov dx,` concludes the CRTC is never touched.
+- **BIOS functions.** Five, not three: `INT 10h` AH=00h/05h/0Eh and `INT 21h` AH=25h/09h, plus
+  `INT 20h`.
+- **Instruction counts.** 3439 instructions and 169 distinct opcode keys, not the spec's
+  estimated "3302 and ~60" — that undercount missed the 56 prefixed instructions.
 
-**1. The frame alignment is off by one.** `bolo_frame_count()` increments at the game's
-frame gate — the instant the original calls `flip_vp` at `2913:029A` — but control does not
-return there. It falls through and draws another whole frame before `bolo_run_tick()`
-returns. So the port's planes at `bolo_frame_count() == k` correspond to the original's
-capture **k+1**, not k. This is stated in `src/bolo.h`'s `bolo_plane()` doc comment and in
-the spec's "Capture and comparison" section. An earlier spec draft had it wrong.
+## Things that cost a session to learn
 
-**2. Do not chase the undefined-flag choices on a divergence.** An earlier draft of plan 2
-named the interpreter's undefined-flag decisions (multi-bit shift `OF`, `mul`'s
-`SF`/`ZF`/`AF`/`PF`) as the first thing to check if the comparison diverges near
-`2913:1026`, `102A`, `0548`, `0627` or `1660`. That advice was wrong and would cost a
-debugging session — worse, it invites a "fix" to flag code that was never at fault. As
-measured above, `OF` is unobservable in this program, and all five of those sites have dead
-flags besides. The choices stay documented at their definitions in `emu/i8086.c` for
-correctness, not as a debugging lead.
-
-## Next up: plan 3 — the machine and the comparison driver
-
-Scope: `emu/machine.{c,h}`, `emu/baseline.txt`, and growing `emu/bolotest.c` from a frame
-dumper into the comparison driver.
-
-The final review of plan 2 walked each plan-3 requirement against the delivered API and
-found it fit. Specifically:
-
-- **EGA read latches work.** Every data read reaches `read8`, and read-modify-write does a
-  genuine bus read at the operand address before its write — which is how the latches load.
-  `cmp` and `test` correctly read *without* writing back, because on real hardware storing
-  an unchanged value to video memory is not a no-op.
-- **A 16-bit access decomposes into two byte accesses, low then high**, which is what an
-  8-bit-bus EGA actually sees.
-- **`i8086_interrupt()` vectors through the guest's own IVT**, which is required: BOLO
-  installs its `INT 08h`/`09h` handlers via DOS AH=25h.
-- **`bool (*intercept)(void *ctx, uint8_t vec)`** on `struct I8086` lets the machine service
-  `INT 10h`/`21h`/`20h` natively — return true and the CPU resumes after the `INT` with no
-  frame pushed. Added specifically so plan 3 does not have to put "how an INT is encoded"
-  inside `machine.c`.
-- **`i8086_reset()` deliberately does not touch the bus callbacks**, so a caller may install
-  them before or after resetting. This is a documented guarantee, not an accident.
-- **The runaway guards are implementable from the caller's loop.** `cpu->sreg[CS]`/`cpu->ip`
-  settle before each step, so both the spec's guards — the guest executing outside the loaded
-  image (linear `0x29230`..`0x2B083`), and "never reached `028E`" — are just checks in the
-  driver loop. One caveat: a `rep` executes its entire run inside a single `i8086_step()`, so
-  an instruction budget under-counts by up to 65535 per string instruction. `CX` bounds it, so
-  nothing hangs; the budget is just coarser than it looks.
-- **A code fetch cannot pollute the EGA latches.** `i8086_step` reads 6 bytes at `CS:IP`, and
-  BOLO's code occupies linear `0x29230`-`0x2B083`, so the overrun reaches at most `0x2B089` —
-  nowhere near the A0000 window.
-
-Nothing else should require reopening `emu/i8086.{c,h}`. The one thing that might: every
-`i8086_step` issues six `read8` callbacks regardless of instruction length and computes a
-mnemonic the executor never reads. At BOLO's ~250k instructions per tick, a long ratchet run
-is a lot of wasted callbacks. **Don't act on this until it's measured** — if it does bite,
-the fix (skip the mnemonic unless asked; add a direct-pointer fetch fast path) is local.
-
-## Known gaps, deliberately left
-
-- `test_exec` covers ~20 scenarios against ~60 opcode families, so most dispatch paths have
-  no committed test. The exhaustive decode oracle covers *decoding* of all 3439 instructions;
-  the execution tests deliberately target the machinery the decode and ALU tests cannot reach,
-  plus the wiring judged riskiest (`xchg`, the `D0`-`D3` shifts, `mul`). Still uncovered and
-  judged low-risk: the BP→SS segment default (BOLO is a `.COM` where `DS == SS == CS`, so it
-  cannot manifest), `lds`/`les` (`les` has zero uses; `lds` runs twice, on the clean-exit path
-  only), and the string-source override.
-- `read16`/`write16` wrap at the 1 MB linear boundary rather than within the 64 KB segment.
-  Requires a word access at offset `FFFF` to matter. Recorded in a comment at the definition
-  so a future divergence hunt finds it rather than rediscovering it.
-- `i8086_not` has no test. Trivial, no flags, and BOLO contains zero `not` instructions.
-- `g_errorMsg` is one process-wide static buffer. Fine for one `I8086`; revisit if plan 3
-  ever instantiates two.
+- **`dest_seg_e` names the page being *displayed*, not the one being drawn.** `clr_alt_box` at
+  `2913:04CF` does `mov ax,dest_seg_e / xor ah,2 / mov es,ax` and never restores ES, so the
+  guest draws into the *other* page. `machine_draw_page()` returns the complement, and there is
+  a test pinning it. Get this backwards and every frame carries the previous frame's drawing.
+- **The `INT 08h` stub must preserve AX.** A hardware interrupt lands between arbitrary
+  instructions; a stub that clobbers AL made the title screen exit as if a key had been
+  pressed, which skipped the `rnd_state` reset and hung the level editor at `2913:12F4`.
+- **A 30-tick gap around frame 150 is a level transition, not a stall.** There are exactly two
+  tick-waits outside the frame gate — `2913:01B9  add al,14h` (20 ticks, level start) and
+  `2913:0215  add al,32h` (50 ticks, level complete) — and neither crosses the frame gate, so a
+  level boundary necessarily costs 20-50 ticks while producing no frames.
+- **Frame alignment: the port's frame `k` pairs with the original's capture `k+1`.** The port's
+  counter increments where the original calls `flip_vp`, but control falls through and draws an
+  entirely new frame before yielding — see `bolo_plane()` in `src/bolo.h`. Beware: **at frame 1
+  alone the wrong alignment looks better** (20 differing bytes versus 34). Only the trend from
+  frame 5 on distinguishes them — thousands of differing bytes for same-index pairing versus
+  dozens for `k+1`.
+- **Overflow is write-only in this program.** BOLO has no signed conditional jump (`70`/`71`,
+  `7C`-`7F` are all absent), no `pushf`/`popf`, and `OF` is bit 11 so its single `lahf` cannot
+  see it. The interpreter's undefined-flag choices therefore cannot affect it — do not chase
+  them on a divergence.
 
 ## Environment facts
 
-- **Always configure CMake with `-G Ninja`.** Required; see `CLAUDE.md`.
-- **This box is headless** — no `DISPLAY`, no Xvfb. `./build/src/bolo` reaches X11 init and
-  aborts with `XOpenDisplay() failed!`. The windowed app cannot be verified here.
-- **GCC is the default `cc` and is stricter than clang here.** Plan 2's first task shipped
-  two `-Wformat-truncation` warnings that clang did not emit. Check with a clean build and a
-  count, not a grep for one word:
-  `cmake --build <dir> 2>&1 | grep -c warning` should print `0`.
-- **`clang-format` 18.1.3 is installed.** Judge it by **exit status** — with `-Werror` it
-  emits `error:`, not `warning:`, so grepping for warnings reports a dirty file as clean.
-  Also, it finds `.clang-format` relative to the file's real path, so checking a copy in a
-  scratch directory silently falls back to LLVM style and invents violations.
-- **Python PIL is available**, the fastest way to actually look at a frame:
-  `python3 -c "from PIL import Image; Image.open('frames/frame-00040.ppm').save('/tmp/f.png')"`
+- **Always configure CMake with `-G Ninja`.**
+- **This box is headless** — no `DISPLAY`, no Xvfb. The windowed app (`./build/src/bolo`)
+  cannot be verified here; it aborts at `XOpenDisplay()`. Plan 3 did not touch `src/`, so that
+  risk is unchanged, but it remains true.
+- **GCC is the default `cc` and is stricter than clang.** Check warnings with a count, not a
+  grep for one word: `cmake --build build 2>&1 | grep -c warning` must print `0`.
+- **Judge `clang-format` by exit status** — with `-Werror` it emits `error:`, not `warning:`,
+  so grepping for warnings reports a dirty file as clean. `src/bolo.c` has two known
+  pre-existing violations on the `VID_OFFSET` macro; everything else is clean.
 - **Ignore the LSP for `emu/`.** There is no `compile_commands.json`, so clangd reports
-  spurious "file not found" and "undeclared identifier" errors — including for
-  `BOLO_LST_PATH`/`BOLO_COM_PATH`, which come from CMake. Trust the build.
+  spurious "file not found" and "undeclared identifier" errors, including for CMake-provided
+  macros like `BOLO_COM_PATH` and for `bolo.h`. Trust the build.
+- **Python PIL is available**, which is how you look at a frame.
 
 ## Verification habits that paid off
 
 1. **Build the oracle before the thing it judges.** Validating the decoder against 3439 real
    instructions before writing any execution logic means a decode bug can never be
-   misdiagnosed as an execution bug later. The LST's byte-for-byte cross-check against
-   `BOLO.COM` is what earns it that authority.
-2. **Mutation-test a new test before trusting it.** Every execution test added late in plan 2
-   was checked by deliberately breaking the code it covers and confirming it failed. One case
-   (`shr F000h,1`) happens to leave the correct low byte, so only the separate high-byte
-   assertion catches it — that would have been a silently vacuous test.
-3. **Treat subagent reports as claims, and re-verify what matters.** Every task's build,
-   tests and formatting were re-run independently before review. Two plan defects surfaced
-   this way — an undefined-behavior test pattern, and a comment promising coverage that did
-   not exist.
-4. **Judge tools by exit status, not by grepping their output.** See `clang-format` above.
-5. **Measure the binary instead of reasoning about it.** "Does BOLO ever observe `OF`?" was
-   answered by counting opcodes, and the answer retired a whole class of concern.
+   misdiagnosed as an execution bug later.
+2. **Mutation-test a new test before trusting it.** Several tests in `emu/` were checked by
+   deliberately breaking the code they cover and confirming they failed. One case
+   (`shr F000h,1`) leaves the correct low byte, so only a separate high-byte assertion catches
+   it — that would otherwise have been a silently vacuous test.
+3. **Look at the picture.** Opening the diff image is what turned "40 bytes differ" into "a
+   gauge segment and six radar dots".
+4. **Measure the binary instead of reasoning about it.** Every correction in "Where the spec is
+   wrong" came from counting opcodes or reading addresses, not from argument. Two of them
+   contradicted confident prose.
+5. **Treat every report as a claim.** Each task's build, tests and formatting were re-run
+   independently before review. Six defects in the plans themselves surfaced that way,
+   including an EGA latch arithmetic error and an interrupt stub that corrupted a register.
