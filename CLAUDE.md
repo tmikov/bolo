@@ -212,10 +212,10 @@ is not a valid actor in the linked lists (0 means end-of-list).
   committed values unless debugging — `bolotest --compare` is measured with these settings, so
   changing one changes what "matching" means.
 
-  Two of them are on by default and both cause the comparison to differ from the original:
-  `DEBUG_SHOW_BASES` only draws (the ~12 bytes per frame in the status panel), while
-  `CLAMP_ACTOR_TO_MAZE` **changes game logic** and is a known, deliberate infidelity — a guard
-  against an out-of-range `maze_buf` access the original makes on purpose.
+  Only `CLAMP_ACTOR_TO_MAZE` is on, and it is a known, deliberate infidelity: it **changes game
+  logic**, guarding against an out-of-range `maze_buf` access the original makes on purpose. It
+  does not appear to fire during the attract demo, so the comparison cannot tell you what
+  turning it off would cost — which is not the same as saying it is safe to remove.
 
 ## The disasm/ workflow
 

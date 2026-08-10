@@ -26,11 +26,13 @@
 
 /// Draw the enemy bases as red dots on the map, in the status panel.
 ///
-/// A pure debug aid: it only draws, and the original draws nothing there. It is
-/// the reason `bolotest --compare` reports a constant ~12 differing bytes on
-/// every frame that draws the map. Turn it off for a clean comparison of that
-/// region; nothing else changes.
-#define DEBUG_SHOW_BASES 1
+/// A pure debug aid: it only draws, and the original draws nothing there.
+///
+/// Off, because leaving it on costs `bolotest --compare` a constant ~12
+/// differing bytes on every frame that draws the map -- noise in the one
+/// measurement this project has. Turn it on when you want to see where the
+/// bases are; nothing but those pixels changes.
+#define DEBUG_SHOW_BASES 0
 
 /// Reject any actor move that would leave the maze interior, reverting the
 /// actor to the cell it came from.

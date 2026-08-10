@@ -12,31 +12,29 @@ The harness works, and it has an answer.
 written from its own disassembly, alongside the C port, with their EGA planes compared frame
 by frame.
 
-**At the first comparable frame, 31,960 of 32,000 bytes match.**
+**At the first comparable frame, 31,972 of 32,000 bytes match.**
 
-The 40 that differ are all in the right-hand status panel, bounding box `x 232..279,
-y 72..178`, and they are two things — **only one of which is a bug**:
-
-1. The original fills a 2x14 light-blue segment at the left of the gauge bar (`x 232..233,
-   y 72..85`). The port leaves it empty. **This is the real divergence**, 28 bytes, and the
-   only one worth chasing. It points at `update_fuel` (`src/bolo.c:1443`) or `draw_hud`
-   (`:1766`).
-2. The port plots six red enemy-base dots on the radar that the original does not. **This is
-   not a bug** — it is `if (HACK) { // Show the bases on the map` at `src/bolo.c:1427`, a
-   deliberate debug aid, with `#define HACK 1` at line 21. Measured: building with `HACK 0`
-   drops the difference from 40 bytes to 28 and collapses the bounding box to
-   `x 232..233, y 72..85`, i.e. to item 1 alone.
-
-Leave `HACK` at its committed value (`CLAUDE.md` says so) — but know that the harness will
-report those 12 bytes forever while it is on. If the baseline is ever to reach a frame where
-the radar is drawn, either the toggle moves to 0 deliberately or the comparison has to account
-for it. That is a decision, not an oversight; make it consciously.
+The 28 that differ are one thing: the original fills a 2x14 light-blue segment at the left of
+the gauge bar (`x 232..233, y 72..85`) and the port leaves it empty. That is **the first bug to
+chase**, and it points at `update_fuel` (`src/bolo.c:1443`) or `draw_hud` (`:1766`).
 
 The maze, the ship, the title, the score, the ship icons, the 2x2 base indicator and the
-compass needle match **byte for byte**. 131 frames diverge only inside that panel; from frame
-132 the whole screen diverges, because by then the two sides have scrolled the view
-differently. All 440 frames of the attract demo were compared, ending cleanly at the guest's
-own `INT 20h`.
+compass needle match **byte for byte** on that frame. All 440 frames of the attract demo were
+compared, ending cleanly at the guest's own `INT 20h`.
+
+**The divergence grows, and the gauge is not the whole story.** Measured byte counts per frame:
+
+| frame | 1 | 50 | 100 | 140 | 200 |
+| --- | --- | --- | --- | --- | --- |
+| bytes differing | 28 | 196 | 224 | 2569 | 3625 |
+
+So something beyond the gauge starts differing well before frame 50, and around frame 140 the
+two sides diverge wholesale — by then they have scrolled the view differently, and everything
+after that is downstream of an earlier cause. Fix the gauge first, then re-measure; the
+frame-50 growth is the next thread, not the frame-140 explosion.
+
+(An earlier draft of this file said "131 frames diverge only inside that panel." That was
+wrong — it is already 196 bytes at frame 50.)
 
 **`emu/baseline.txt` therefore reads `0`, and that number badly understates the state of the
 port.** It means "the port diverges at the first frame it is possible to compare" — not
