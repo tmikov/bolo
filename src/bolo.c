@@ -332,9 +332,9 @@ static void vert_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
 static void horiz_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1);
 static uint8_t getkey(void);
 static void handle_kbd(void);
-static void update_ship(void);
+static bool update_ship(void);
 static void draw_map(unsigned shipCellX, unsigned shipCellY);
-static void update_fuel(void);
+static bool update_fuel(void);
 static void draw_radar(void);
 static void draw_comp_arr(void);
 static void init_ship_pos(void);
@@ -542,6 +542,11 @@ static inline uint8_t *mempset(uint8_t *dst, uint8_t value, unsigned len) {
 }
 
 // clang-format off
+/// 2913:107B
+static const SBOL str_out_of_fuel[] = {
+  SB('O'), SB('U'), SB('T'), SB(' '), SB('O'), SB('F'), SB(' '),
+  SB('F'), SB('U'), SB('E'), SB('L'), SBOL_END
+};
 static const SBOL str_congrats[] = {
   SB('C'), SB('O'), SB('N'), SB('G'), SB('R'), SB('A'), SB('T'), SB('U'),
   SB('L'), SB('A'), SB('T'), SB('I'), SB('O'), SB('N'), SB('S'), SB(' '),
@@ -699,7 +704,19 @@ static AsyncResult async_start(void) {
   case 11:
     handle_kbd();
     clr_alt_box(0 /* dest_seg ^ EGA_PAGE_SIZE */);
-    update_ship();
+    if (update_ship()) {
+      // Out of fuel. Hold the banner up before killing the ship; the original
+      // spins on time_tick here, inside update_fuel.
+      // 2913:0B6D
+      async_state.start.wait_until = time_tick + 50;
+      async_state.start.state = 13;
+      // FALL
+    case 13:
+      if (time_tick != async_state.start.wait_until)
+        return AS_UNWIND;
+      // 2913:0B78. The death check at the end of this case picks it up.
+      coll_flags1[0] = 0xFE;
+    }
     proc_43();
     adjust_bullets();
     proc_17();
@@ -1368,7 +1385,7 @@ static void handle_kbd(void) {
 /// Move the main ship, update map and radar.
 ///
 /// 2913:09E7                       proc_12         proc    near
-static void update_ship(void) {
+static bool update_ship(void) {
   if (vel_magn[0]) {
     StepXY step = step_xy[vel_magn[0]][(ship_angle[0] + vel_angle) & 7];
     bool cellChanged = false;
@@ -1411,7 +1428,7 @@ static void update_ship(void) {
     }
   }
 
-  update_fuel();
+  return update_fuel();
 }
 
 /// Draw the small map in the right bottom of the screen
@@ -1473,9 +1490,56 @@ static void draw_map(unsigned shipCellX, unsigned shipCellY) {
   }
 }
 
+/// Draw the "OUT OF FUEL" banner. The caller pauses and then kills the ship.
+/// 2913:0B5B                       out_of_fuel
+static void out_of_fuel(void) {
+  draw_hud();
+  ega_map_mask(EGAYellow);
+  draw_str(0x0E18, str_out_of_fuel);
+}
+
+/// Burn fuel for this frame and advance the gauge one column towards the
+/// current level. Returns true when the tank just ran dry, which the caller
+/// turns into a pause and then a death.
 /// 2913:0B14                       update_fuel     proc    near
-static void update_fuel(void) {
-  // FIXME
+static bool update_fuel(void) {
+  ega_map_mask(EGAHighBlue);
+
+  // Burn fuel in proportion to speed.
+  fuel_level_e -= (uint16_t)(vel_magn[0] * 2);
+  if ((int16_t)fuel_level_e < 0) {
+    out_of_fuel();
+    return true;
+  }
+
+  // The gauge shows the high byte of the fuel level as a bar of one column per
+  // unit, but it only ever moves one column per call, so the bar slides towards
+  // the real level rather than jumping to it. Columns are XOR-ed, which makes
+  // lighting and clearing the same operation.
+  uint8_t target = (uint8_t)(fuel_level_e >> 8);
+  uint8_t shown = fuel_disp_e;
+  if (shown == target)
+    return false;
+
+  // The bar starts at x=232. Growing lights the column just past the one
+  // already shown; shrinking clears the column at it.
+  unsigned x;
+  if (shown < target) {
+    ++fuel_disp_e;
+    x = 232 + shown;
+  } else {
+    --fuel_disp_e;
+    x = 231 + shown;
+  }
+
+  unsigned vidOfs = vid_offset(x, 72);
+  uint8_t vidMask = vid_mask(x);
+  for (unsigned row = 0; row != 14; ++row) {
+    ega_xor(vidOfs, vidMask, EGAHighBlue);
+    ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighBlue);
+    vidOfs += EGA_STRIDE;
+  }
+  return false;
 }
 
 /// Draw the radar showing the relative position of enemy bases.

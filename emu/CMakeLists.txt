@@ -95,7 +95,7 @@ add_test(NAME determinism
 # records. It fails only on a regression; an improvement is reported and left
 # for a human to commit. A divergence is a finding to investigate, never
 # something to tune away by adjusting the comparison.
-add_test(NAME compare COMMAND bolotest --compare --ticks 200
+add_test(NAME compare COMMAND bolotest --compare --ticks 400
                               --out ${CMAKE_CURRENT_BINARY_DIR}/cmp
                               --baseline ${CMAKE_CURRENT_SOURCE_DIR}/baseline.txt)
 

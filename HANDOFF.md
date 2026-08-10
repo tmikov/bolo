@@ -1,8 +1,8 @@
 # HANDOFF
 
-Written 2026-08-09, at the end of the session that implemented plan 3 of the fidelity
-harness. **All three plans are done.** This describes a point in time — replace or delete it
-once the first divergence is closed and the baseline moves off 0.
+Written 2026-08-10. **All three plans of the fidelity harness are done, and the first
+divergence it found has been closed.** This describes a point in time — replace it when the
+baseline moves again.
 
 ## The headline
 
@@ -12,51 +12,54 @@ The harness works, and it has an answer.
 written from its own disassembly, alongside the C port, with their EGA planes compared frame
 by frame.
 
-**At the first comparable frame, 31,972 of 32,000 bytes match.**
+**The port is frame-exact against the original for the first 131 frames**, out of the 440 the
+attract demo runs. `emu/baseline.txt` reads `131`.
 
-The 28 that differ are one thing: the original fills a 2x14 light-blue segment at the left of
-the gauge bar (`x 232..233, y 72..85`) and the port leaves it empty. That is **the first bug to
-chase**, and it points at `update_fuel` (`src/bolo.c:1443`) or `draw_hud` (`:1766`).
+That is the whole screen — maze, ship, HUD, gauge, radar, compass — matching byte for byte,
+frame after frame, against the original binary executing under the interpreter.
 
-The maze, the ship, the title, the score, the ship icons, the 2x2 base indicator and the
-compass needle match **byte for byte** on that frame. All 440 frames of the attract demo were
-compared, ending cleanly at the guest's own `INT 20h`.
+## Next: frame 132
 
-**The divergence grows, and the gauge is not the whole story.** Measured byte counts per frame:
+Frame 132 diverges wholesale: 2249 of 32000 bytes, bounding box `x 0..292, y 0..192`. Looking
+at the two frames side by side, **the ship is in a different part of the maze**, and the
+compass and base indicator follow it. This is a **game-state** divergence, not a drawing one —
+something in movement, collision or actor update has taken a different path by then, and every
+later frame is downstream of it.
 
-| frame | 1 | 50 | 100 | 140 | 200 |
-| --- | --- | --- | --- | --- | --- |
-| bytes differing | 28 | 196 | 224 | 2569 | 3625 |
+That makes it a different kind of hunt from the gauge. The gauge was a missing draw call and
+the diff image pointed straight at it; this one needs the *first* frame where the ship's
+position differs, which is not necessarily 132 — the state can diverge silently before it
+shows on screen. Compare `ship_cellx/celly/ofsx/ofsy` between the two sides per frame to find
+the real first divergence, rather than starting from the pixels.
 
-So something beyond the gauge starts differing well before frame 50, and around frame 140 the
-two sides diverge wholesale — by then they have scrolled the view differently, and everything
-after that is downstream of an earlier cause. Fix the gauge first, then re-measure; the
-frame-50 growth is the next thread, not the frame-140 explosion.
+The likely suspects are the routines still unimplemented (below), plus `CLAMP_ACTOR_TO_MAZE`,
+which is a deliberate logic deviation and is exactly the kind of thing that would move an actor
+differently.
 
-(An earlier draft of this file said "131 frames diverge only inside that panel." That was
-wrong — it is already 196 bytes at frame 50.)
+## What is still missing
 
-**`emu/baseline.txt` therefore reads `0`, and that number badly understates the state of the
-port.** It means "the port diverges at the first frame it is possible to compare" — not
-"nothing matches". Read the paragraph above before drawing any conclusion from the file.
+The port has 8 routines carrying `FIXME`. Three are entirely empty, five partial:
 
-Reproduce it with:
+| state | routine |
+| --- | --- |
+| empty | `inc_fuel`, `update_hisco` |
+| partial | `is_actor_close`, `explode_bullets`, `draw_enemy_base`, `draw_enemies`, `proc_60` |
 
-```sh
-./build/emu/bolotest --compare --ticks 400 --out /tmp/cmp --continue-past-diff
-python3 -c "from PIL import Image; Image.open('/tmp/cmp/diff-00001.ppm').save('/tmp/d.png')"
-```
+`update_fuel` was the third empty one and is now done — it alone was worth 131 frames. The
+harness is the tool for prioritising the rest: implement one, re-measure, see what it buys.
 
 ## What to do next
 
-**Close the two panel differences.** They are the smallest, best-characterised bugs in the
-port, they are the only thing standing between the project and a nonzero fidelity number, and
-the harness will tell you the moment you have fixed them. Start with the radar dots — the port
-draws something the original does not, which is usually the easier direction.
+**Chase the frame-132 divergence**, as described above.
 
-Then commit the new baseline. The tool prints `IMPROVED: update emu/baseline.txt to N`; a
-human commits it. **The tool never rewrites that file**, because a number that always agrees
-with the last run is not a ratchet.
+```sh
+./build/emu/bolotest --compare --ticks 400 --out /tmp/cmp --continue-past-diff
+python3 -c "from PIL import Image; Image.open('/tmp/cmp/diff-00132.ppm').save('/tmp/d.png')"
+```
+
+When it moves, commit the new baseline. The tool prints `IMPROVED: update emu/baseline.txt to
+N`; a human commits it. **The tool never rewrites that file**, because a number that always
+agrees with the last run is not a ratchet.
 
 **Do not change the comparison, the alignment or the baseline to make a difference disappear.**
 The difference is the finding. That rule is in `CLAUDE.md` too.
@@ -74,10 +77,11 @@ The difference is the finding. That rule is in `CLAUDE.md` too.
 
 ## Where things stand
 
-Branch `work`, 38 commits ahead of `master`, nothing pushed. `ctest` is 14/14 green, the build
+Branch `work`, nothing pushed. `ctest` is 14/14 green, the build
 is warning-free under `-Wall -Wextra`, and `clang-format --dry-run -Werror emu/*.c emu/*.h`
-exits 0. Across all of plan 3, **nothing under `src/` or `disasm/` changed** — the thing under
-test was never touched to flatter the result.
+exits 0. Nothing under `disasm/` has ever changed. `src/bolo.c` was untouched for the whole of
+plan 3; the only change to it since is `update_fuel`, which was implementing a missing routine,
+not adjusting the port to flatter the comparison.
 
 | Component | What it is |
 | --- | --- |
