@@ -15,11 +15,22 @@ by frame.
 **At the first comparable frame, 31,960 of 32,000 bytes match.**
 
 The 40 that differ are all in the right-hand status panel, bounding box `x 232..279,
-y 72..178`, and they are exactly two things:
+y 72..178`, and they are two things — **only one of which is a bug**:
 
 1. The original fills a 2x14 light-blue segment at the left of the gauge bar (`x 232..233,
-   y 72..85`). The port leaves it empty.
-2. The port plots six red enemy-base dots on the radar. The original plots none.
+   y 72..85`). The port leaves it empty. **This is the real divergence**, 28 bytes, and the
+   only one worth chasing. It points at `update_fuel` (`src/bolo.c:1443`) or `draw_hud`
+   (`:1766`).
+2. The port plots six red enemy-base dots on the radar that the original does not. **This is
+   not a bug** — it is `if (HACK) { // Show the bases on the map` at `src/bolo.c:1427`, a
+   deliberate debug aid, with `#define HACK 1` at line 21. Measured: building with `HACK 0`
+   drops the difference from 40 bytes to 28 and collapses the bounding box to
+   `x 232..233, y 72..85`, i.e. to item 1 alone.
+
+Leave `HACK` at its committed value (`CLAUDE.md` says so) — but know that the harness will
+report those 12 bytes forever while it is on. If the baseline is ever to reach a frame where
+the radar is drawn, either the toggle moves to 0 deliberately or the comparison has to account
+for it. That is a decision, not an oversight; make it consciously.
 
 The maze, the ship, the title, the score, the ship icons, the 2x2 base indicator and the
 compass needle match **byte for byte**. 131 frames diverge only inside that panel; from frame
