@@ -207,9 +207,15 @@ is not a valid actor in the linked lists (0 means end-of-list).
 - `// 4F89h` after a variable is its address in the original's data segment.
 - `var_NNNN`, `proc_NN`, `arr_Ne`, `buf49` are entities lifted from the disassembly whose purpose
   is not yet understood. Renaming one to something meaningful is a normal part of the work.
-- `HACK`, `HACK2`, `HACK3`, `VERBOSE` at the top of the file are compile-time debug toggles
-  (skip the title screen, force a level, extra logging). Leave them at their committed values
-  unless debugging.
+- `DEBUG_SHOW_BASES`, `CLAMP_ACTOR_TO_MAZE`, `HACK2`, `HACK3`, `VERBOSE` at the top of the file
+  are compile-time debug toggles, each documented where it is defined. Leave them at their
+  committed values unless debugging — `bolotest --compare` is measured with these settings, so
+  changing one changes what "matching" means.
+
+  Two of them are on by default and both cause the comparison to differ from the original:
+  `DEBUG_SHOW_BASES` only draws (the ~12 bytes per frame in the status panel), while
+  `CLAMP_ACTOR_TO_MAZE` **changes game logic** and is a known, deliberate infidelity — a guard
+  against an out-of-range `maze_buf` access the original makes on purpose.
 
 ## The disasm/ workflow
 

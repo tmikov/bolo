@@ -17,9 +17,41 @@
 
 #include "bolo.h"
 
+// Compile-time debug toggles. Leave them at their committed values unless you
+// are actively debugging: emu/bolotest's comparison against the original is
+// measured with these settings, so changing one changes what "matching" means.
+
+/// Trace every actor-list insertion and removal to stdout.
 #define VERBOSE 0
-#define HACK 1
+
+/// Draw the enemy bases as red dots on the map, in the status panel.
+///
+/// A pure debug aid: it only draws, and the original draws nothing there. It is
+/// the reason `bolotest --compare` reports a constant ~12 differing bytes on
+/// every frame that draws the map. Turn it off for a clean comparison of that
+/// region; nothing else changes.
+#define DEBUG_SHOW_BASES 1
+
+/// Reject any actor move that would leave the maze interior, reverting the
+/// actor to the cell it came from.
+///
+/// Unlike DEBUG_SHOW_BASES this **changes game logic**, and the original has no
+/// equivalent check -- it is a guard against an out-of-range maze_buf access,
+/// which the original makes deliberately (hence the guard row in front of
+/// _ext_maze_buf). So it is a known, deliberate infidelity.
+///
+/// It appears not to fire during the attract demo: turning it off shifts no
+/// frame of `bolotest --compare` beyond the ~12 bytes DEBUG_SHOW_BASES accounts
+/// for. That means the comparison cannot currently tell you what removing it
+/// would cost, and it is not evidence that removing it is safe.
+#define CLAMP_ACTOR_TO_MAZE 1
+
+/// Skip the title screen and the level/density editor, starting directly on
+/// level 4 at density 0, and bind 'B' to teleport the ship to the first enemy
+/// base. Shortcuts for reaching gameplay while debugging.
 #define HACK2 0
+
+/// Never spawn enemies.
 #define HACK3 0
 
 #if defined(NDEBUG) && defined(VERBOSE)
@@ -1424,8 +1456,8 @@ static void draw_map(unsigned shipCellX, unsigned shipCellY) {
   ega_xor(vidOfs, vidMask, EGAHighCyan);
   ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighCyan);
 
-  if (HACK) {
-    // Show the bases on the map.
+  if (DEBUG_SHOW_BASES) {
+    // Show the bases on the map. The original draws nothing here.
     for (int i = 0; i < NUM_BASES; ++i) {
       unsigned y = base_celly[i] + 124;
       unsigned x = base_cellx[i] + 232;
@@ -3498,7 +3530,10 @@ static void proc_43_inner(int actor) {
       add_actor(actor, bl_cellx, bh_celly);
     }
 
-    if (HACK) {
+    if (CLAMP_ACTOR_TO_MAZE) {
+      // Treat leaving the maze interior as a rejected move: loc_318 puts the
+      // actor back in the cell it came from, the same way a collision does.
+      // The original has no such check.
       if (bh_celly < 3 || bh_celly > 61 || bl_cellx < 1 || bl_cellx > 62)
         goto loc_318;
     }
