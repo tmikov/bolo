@@ -267,7 +267,16 @@ static uint16_t base_bits_bottom[NUM_BASES][7]; // [5292h..52E6h)
 static uint8_t base_bits_right[NUM_BASES][28]; // [52E6h..538Eh)
 static uint8_t base_bits_left[NUM_BASES][28]; // [538Eh..5436h)
 
-uint8_t var_207e[81]; // *(2913:5436=0)
+/// 5436h onwards: var_207e, buf49 and var_214e, which are contiguous in the
+/// original and are kept contiguous here because the code indexes out of one
+/// into the next. proc_60 steps through var_207e's 9x9 grid by adding a signed
+/// offset to the *low byte* of the index (2913:2CFD adds to AL, not AX), so an
+/// index near either end wraps and lands anywhere in 0..255. Backing all three
+/// with one 256-byte buffer makes that wrap read bytes, as it does in the
+/// original, instead of running off the end of an array.
+static uint8_t _ext_var_207e[256];
+
+#define var_207e _ext_var_207e // *(2913:5436=0)
 // static struct {
 //   uint8_t var_207e[31]; // *(2913:5436=0)
 //   uint8_t var_208e[8];  //+31 *(2913:5455=0)
@@ -277,9 +286,9 @@ uint8_t var_207e[81]; // *(2913:5436=0)
 //   uint8_t var_212e[32]; //+49 *(2913:5467=0)
 // } s1;
 
-static uint8_t buf49[7 * 7]; // *(2913:5487=0)
+#define buf49 (_ext_var_207e + 81) // *(2913:5487=0)
 
-uint8_t var_214e[81]; // *(2913:54B8=0)
+#define var_214e (_ext_var_207e + 81 + 49) // *(2913:54B8=0)
 // static struct {
 //   uint8_t var_214e[40]; // *(2913:54B8=0)
 //   uint8_t var_215e[41]; //+40 *(2913:54E0=0)
@@ -468,7 +477,7 @@ typedef struct {
 } DLDH;
 static DLDH proc_58(int si, uint8_t dh);
 static void proc_59(int si);
-static void proc_60(void);
+static void proc_60(int si, DLDH *r);
 static uint8_t rnd_update(uint8_t limit);
 static uint8_t rndnum(uint8_t limit);
 
@@ -3254,7 +3263,7 @@ static const S7 var_158[12] = {
 static void proc_37(int8_t dl_x, int8_t dh_y) {
   proc_36(dl_x, dh_y);
 
-  memset(buf49, 0, sizeof(buf49));
+  memset(buf49, 0, 7 * 7);
 
   for (int i = 0; i < 12; ++i) {
     int8_t dCell0 = var_158[i].dCell0;
@@ -3601,23 +3610,34 @@ static void proc_43_inner(int actor) {
       //                mov     bx,ax
       //                cmp     var_164[bx],ah          ; (2913:2927=0)
       //                jne     loc_300
+      DLDH dldh = {.dl = dl, .dh = dh};
       if (var_164[ship_kind[actor]] == 0) {
         //                call    proc_58                 ; (2BF4)
-        DLDH dldh = proc_58(actor, dh);
-        dl = dldh.dl;
-        dh = dldh.dh;
+        dldh = proc_58(actor, dh);
         //                jmp     short loc_301           ; (2774)
       } else {
         // loc_300:                                        ;  xref 2913:276A
         //                call    proc_60                 ; (2CBA)
-        proc_60();
+        proc_60(actor, &dldh);
       }
+      dl = dldh.dl;
+      dh = dldh.dh;
       // loc_301:                                        ;  xref 2913:276F
 
       //                pop     cx
 
-      if (dl < vel_magn[actor]) {
-        var_188e[actor] = dl;
+      //                mov     al,dl
+      //                sub     dl,ds:vel_magn_e[si]    ; (2913:50B7=0)
+      //                jns     loc_302
+      //                mov     ds:var_188e[si],al      ; (2913:506D=0)
+      // The count just chosen is also spent by this frame's move, so the actor
+      // that moves stores it already decremented -- exactly as the top of this
+      // loop decrements the count it read. Only an actor that cannot move
+      // keeps the full count.
+      uint8_t chosen = dl;
+      dl -= vel_magn[actor];
+      if ((int8_t)dl < 0) {
+        var_188e[actor] = chosen;
         return;
       }
     }
@@ -3966,9 +3986,269 @@ static void proc_59(int si) {
   var_188e[si] = rndnum(proc_45(si));
 }
 
+/// 2913:2C6B..2CB9 -- the tables proc_60 indexes, in the original's order.
+///
+/// One array because the code indexes past the end of one table into the next:
+/// 2913:2D47 reads var_174 at (bh * 2 + 0..3), which reaches 17 while var_174
+/// is 16 bytes long, and lands in var_175.
+// clang-format off
+static const uint8_t proc60_tables[] = {
+    // 2C6B: the step from a cell to its neighbour in the 9x9 grid, indexed by
+    // a direction 0..3. -9 is up a row, +9 down, -1 and +1 across.
+    0xF7, 0x01, 0x09, 0xFF,
+    // 2C6F  var_173
+    0x00, 0x01, 0x00, 0x07, 0x01, 0x02, 0x03, 0x00, 0x00, 0x03, 0x04, 0x05, 0x07, 0x00, 0x05, 0x06,
+    // 2C7F  var_174
+    0x07, 0x07, 0x01, 0x01, 0x01, 0x03, 0x01, 0x03, 0x05, 0x05, 0x03, 0x03, 0x07, 0x05, 0x07, 0x05,
+    // 2C8F  var_175
+    0x06, 0x06, 0x02, 0x02, 0x00, 0x04, 0x00, 0x04, 0x06, 0x06, 0x02, 0x02, 0x00, 0x04, 0x00, 0x04,
+    // 2C9F  var_176
+    0x00, 0x03, 0x06,
+    // 2CA2  var_177
+    0x03, 0x04, 0x05, 0x02, 0xFF, 0x06, 0x01, 0x00, 0x07,
+    // 2CAB  var_178
+    0x01, 0x01, 0x01, 0x01, 0xFF, 0xFF, 0xFF, 0x00, 0x01, 0x01, 0x01, 0x01, 0xFF, 0xFF, 0xFF};
+// clang-format on
+
+#define P60_TBL(addr) (proc60_tables + ((addr) - 0x2C6B))
+#define var_173 P60_TBL(0x2C6F)
+#define var_174 P60_TBL(0x2C7F)
+#define var_175 P60_TBL(0x2C8F)
+#define var_176 P60_TBL(0x2C9F)
+#define var_177 P60_TBL(0x2CA2)
+#define var_178 P60_TBL(0x2CAB)
+
+/// 2913:2EA4                       loc_410
+///
+/// Turn one step from `cl` towards `bl` and decide this actor's new count.
+/// `al` is proc_45's answer for the angle that was just tried. Always reports
+/// success (the original sets the carry on every path out of here).
+static bool proc60_turn(int si, uint8_t al, uint8_t bl, uint8_t bh, uint8_t cl, DLDH *r) {
+  uint8_t ch = al;
+
+  //                mov     al,bl
+  //                sub     al,cl
+  //                jz      loc_411
+  if ((uint8_t)(bl - cl) != 0) {
+    //                add     al,7
+    //                cbw
+    //                mov     bp,ax
+    //                mov     al,cl
+    //                add     al,[bp+2CABh]
+    //                and     al,7
+    uint8_t angle = (uint8_t)(cl + var_178[(uint8_t)(bl - cl + 7)]) & 7;
+    ship_angle[si] = angle;
+    ++r->dh;
+    //                cmp     al,bh
+    //                jne     -> dl = 0
+    if (angle != bh) {
+      r->dl = 0;
+      return true;
+    }
+  }
+
+  // loc_411
+  r->dl = rndnum(ch) + 1;
+  return true;
+}
+
+/// 2913:2E80 proc_61 and 2913:2E8F proc_62, which differ only in the distance
+/// they insist on.
+///
+/// Point the actor at `bl` and ask proc_45 how far it can go that way. Below
+/// `least` the angle is put back and this reports failure, leaving the caller
+/// to try another; otherwise it turns towards `bl` and sets the count.
+static bool proc60_try_angle(int si, uint8_t bl, uint8_t bh, uint8_t least, DLDH *r) {
+  uint8_t cl = ship_angle[si];
+  ship_angle[si] = bl;
+  uint8_t al = proc_45(si);
+
+  // loc_409
+  if (al < least) {
+    ship_angle[si] = cl;
+    return false; // clc
+  }
+  return proc60_turn(si, al, bl, bh, cl, r);
+}
+
+/// The four routines at 2913:2E64..2E7F. Each ends `sub al,bh`, so the carry
+/// the caller branches on is that subtraction's borrow and nothing else.
+static bool proc60_borrow(uint8_t lhs, uint8_t bh) {
+  return lhs < bh;
+}
+
+/// Steer an actor that is within four cells of the player, using the 9x9 flow
+/// field in var_207e that draw_9x9 builds around the player. Falls through to
+/// proc_58's random wander when the player is further away than that.
 /// 2913:2CBA                       proc_60         proc    near
-static void proc_60(void) {
-  // FIXME: implement.
+static void proc_60(int si, DLDH *r) {
+  //                mov     al,ds:ship_celly[si]
+  //                sub     al,ds:ship_celly
+  //                add     al,4
+  //                cmp     al,9
+  //                jae     loc_387
+  uint8_t dy = (uint8_t)(ship_celly[si] - ship_celly[0] + 4);
+  uint8_t dx = (uint8_t)(ship_cellx[si] - ship_cellx[0] + 4);
+  if (dy < 9 && dx < 9) {
+    //                mov     ah,al / shl al,1 x3 / add ah,al  -- ah = dy * 9
+    unsigned di = dy * 9 + dx;
+    uint8_t here = var_207e[di];
+
+    //                cmp     al,8
+    //                ja      loc_387
+    //                jz      loc_391
+    if (here > 8)
+      goto loc_387;
+    if (here != 8) {
+      uint8_t bh = here;
+      uint8_t bl = here;
+      // The direction is the field value halved; ch counts the attempts.
+      uint8_t ch = here >> 1;
+
+      //                mov     ax,di
+      //                add     al,[bp+2C6Bh]   -- the low byte only, so this wraps
+      //                mov     di,ax
+      uint8_t nextIdx = (uint8_t)(di + proc60_tables[here >> 1]);
+      uint8_t next = var_207e[nextIdx];
+      //                cmp     al,8    / je  loc_386
+      //                cmp     al,bh   / je  loc_386
+      if (next != 8 && next != bh)
+        bl = var_173[next * 2 + ch];
+
+      // loc_386
+      for (;;) {
+        if (proc60_try_angle(si, bl, bh, 0x20, r))
+          return;
+        // loc_388
+        if (++ch != 0)
+          break;
+        if (bl == bh)
+          break;
+        bl = bh;
+      }
+
+      // loc_389. Two flags: is the actor in the near half of its cell in x,
+      // and in y. The original builds them with cmp/rcl, one bit each.
+      //                xor     al,al
+      //                cmp     byte ptr ds:ship_ofsx[si],13h / rcl al,1
+      //                cmp     byte ptr ds:ship_ofsy[si],13h / rcl al,1
+      uint8_t quadrant = (uint8_t)(((uint8_t)ship_ofsx[si] < 0x13 ? 2 : 0) |
+                                   ((uint8_t)ship_ofsy[si] < 0x13 ? 1 : 0));
+      unsigned di2 = (unsigned)(bh << 1) + quadrant;
+
+      bl = var_174[di2];
+      if (proc60_try_angle(si, bl, bh, 0x0A, r))
+        return;
+
+      // loc_390. bl is still var_174's angle: the original does not reload it,
+      // so the turn below is towards that one even though the angle it just
+      // set is var_175's.
+      uint8_t cl = ship_angle[si];
+      ship_angle[si] = var_175[di2];
+      proc60_turn(si, proc_45(si), bl, bh, cl, r);
+      return;
+    }
+
+    // loc_391. The actor is on the player's own cell: steer by where it sits
+    // inside that cell rather than by the field. bh and bl end up as the
+    // distance to the cell edge in y and x, clamped at the ends.
+    unsigned yIdx = 0;
+    uint8_t bh = 0x13;
+    uint8_t ofsY = (uint8_t)(0x13 - ship_ofsy[0] + ship_ofsy[si]);
+    if ((int8_t)ofsY < 0) {
+      bh = 0;
+    } else if (ofsY >= 0x0E) {
+      ++yIdx;
+      if (ofsY >= 0x19) {
+        ++yIdx;
+        if (ofsY >= 0x26)
+          bh = 0x25;
+      }
+    }
+
+    unsigned xIdx = 0;
+    uint8_t bl = 0x12;
+    uint8_t ofsX = (uint8_t)(0x12 - ship_ofsx[0] + ship_ofsx[si]);
+    if ((int8_t)ofsX < 0) {
+      bl = 0;
+    } else if (ofsX >= 0x0D) {
+      ++xIdx;
+      if (ofsX >= 0x18) {
+        ++xIdx;
+        if (ofsX >= 0x26)
+          bl = 0x25;
+      }
+    }
+
+    // loc_395
+    unsigned di3 = var_176[yIdx] + xIdx;
+    uint8_t want = var_177[di3];
+
+    //                test    al,al   / js  loc_399
+    //                cmp     al,ds:ship_angle_e[si] / je loc_399
+    if ((int8_t)want >= 0 && want != ship_angle[si]) {
+      uint8_t cl = want;
+      // loc_400 dispatches on the low bit of the index, then on the actor's
+      // angle, and turns only when the actor has room on that side. Every
+      // "no room" answer falls through to loc_396.
+      bool turn = true;
+      if (di3 & 1) {
+        uint8_t angle = ship_angle[si];
+        if (di3 == 1) {
+          if (angle == 5)
+            turn = proc60_borrow((uint8_t)(0x1A - bl), bh);
+          else if (angle == 3)
+            turn = proc60_borrow((uint8_t)(0x2F - bl), bh);
+        } else if (di3 == 3) {
+          if (angle == 3)
+            turn = !proc60_borrow((uint8_t)(0x0B + bl), bh);
+          else if (angle == 1)
+            turn = proc60_borrow((uint8_t)(0x1A - bl), bh);
+        } else if (di3 == 5) {
+          if (angle == 5)
+            turn = !proc60_borrow((uint8_t)(0x2F - bl), bh);
+          else if (angle == 7)
+            turn = proc60_borrow((uint8_t)(bl - 0x0A), bh);
+        } else {
+          if (angle == 1)
+            turn = proc60_borrow((uint8_t)(0x2F - bl), bh);
+          else if (angle == 7)
+            turn = !proc60_borrow((uint8_t)(0x0B + bl), bh);
+        }
+        // Each "goto loc_399" above means: do not turn, just keep moving.
+        if (!turn) {
+          r->dl = vel_magn[si];
+          return;
+        }
+      }
+
+      // loc_396. Only an actor whose dh is FFh turns this frame; the rest keep
+      // their heading and stop.
+      if ((uint8_t)(r->dh + 1) == 0) {
+        r->dh = 0;
+        // loc_397
+        uint8_t angle = ship_angle[si];
+        uint8_t newAngle = (uint8_t)(angle + var_178[(uint8_t)(cl - angle + 7)]) & 7;
+        ship_angle[si] = newAngle;
+        if (cl == newAngle) {
+          r->dl = vel_magn[si];
+          return;
+        }
+      }
+      // loc_398
+      r->dl = 0;
+      return;
+    }
+
+    // loc_399
+    r->dl = vel_magn[si];
+    return;
+  }
+
+loc_387:
+  // The player is out of the 9x9 window, so there is no field to follow:
+  // 2913:2D1F jumps straight into proc_58 and wanders instead.
+  *r = proc_58(si, r->dh);
 }
 
 /// Return a pseudo random value in the range [0..power-of-two).

@@ -12,68 +12,47 @@ The harness works, and it has an answer.
 written from its own disassembly, alongside the C port, with their EGA planes compared frame
 by frame.
 
-**The port is frame-exact against the original for the first 131 frames**, out of the 440 the
-attract demo runs. `emu/baseline.txt` reads `131`.
+**The port is frame-exact against the original for the first 147 frames**, out of the 440 the
+attract demo runs. `emu/baseline.txt` reads `147`.
 
 That is the whole screen — maze, ship, HUD, gauge, radar, compass — matching byte for byte,
 frame after frame, against the original binary executing under the interpreter.
 
-## Next: `proc_58` returns the wrong number at frame 12
+## Next: an actor at the bottom maze edge, frame 148
 
-The pixels first differ at frame 132, but **the game state first differs at frame 12**. The
-screen matched for 120 frames after that only because the actors that diverged were not on it.
-Comparing state rather than pixels is now built in — see "Comparing state" below.
+The state now matches through frame 133 and the pixels through 147. Two frontiers, in order:
 
-The first divergence is one value:
+**Frame 134, state.** Actor 20 goes its own way: `ship_cellx/celly/ofsx/ofsy`, `coll_flags1`,
+`var_188e` and `ship_kind` all differ for that one actor, and `rnd_state` and `time_5bit` with
+them. `ship_kind[20]` differing (original 11h, port 10h) is the interesting part — the two
+sides disagree about *what that actor is*, not just where it is, which points at actor
+creation or destruction rather than movement. The partial `FIXME` routines below are the
+suspects.
 
-```
-state: var_188e differs at frame 12, element 31 (508Ch): original 0Dh, port 10h
-```
-
-`var_188e[31]` is a per-actor countdown, decremented by `vel_magn` each frame; when it runs
-below `vel_magn` the actor picks a new heading and a new count. Both sides agree exactly for
-the whole preceding run and both start a new count at frame 12 — the original picks 13, the
-port picks 16. The value comes from `proc_58` (`2913:2BF4`), through
-`dl = rndnum(p45res - vel_magn) + 1 + vel_magn`.
-
-**It is not the randomness.** `rnd_state` and `time_5bit` both still match at the end of frame
-12 and only diverge at 13, so the two sides drew identical random numbers through the frame in
-question. The actor's position, angle, `vel_magn` and the maze all match at that point too. So
-`proc_58` returned a different number from identical inputs and identical draws: the bug is
-arithmetic, in `proc_58`, in `proc_45` (its eight per-angle handlers `proc_46`..`proc_53`), or
-in `rndnum`/`rnd_update`. Auditing those against the disassembly is the next task.
-
-Three things are already ruled out, each by measurement rather than argument:
-
-- **The `proc_60` stub is not the cause.** It looked like the obvious suspect — the port's is
-  empty and its caller leaves `dl` stale — but instrumenting the stub shows it is first reached
-  at frame **13**, after the divergence. It is still unimplemented and still matters; it is
-  just not first.
-- **The RNG seed is not the cause.** `time_5bit = time_tick & 1Fh` at the end of level select
-  seeds the RNG from the timer, and the harness deliberately feeds the two sides different tick
-  schedules, so this looked like a harness artifact. Measured: both sides seed identically and
-  `time_5bit` agrees through frame 12. The `IDLE_THRESHOLD` deviation does not reach the RNG.
-- **`CLAMP_ACTOR_TO_MAZE` is not implicated at frame 12** — the divergence is a returned value,
-  not a rejected move.
+**Frame 148, pixels.** 14 bytes, `x 56..105, y 189..191` — a few pixel fragments on the bottom
+edge of the maze, an actor clipped at the border. Small and self-contained; probably a
+worthwhile one to take first, since it is a drawing difference rather than a state one.
 
 ## What is still missing
 
-The port has 8 routines carrying `FIXME`. Three are entirely empty, five partial:
+The port has 6 routines carrying `FIXME`. Two are entirely empty, four partial:
 
 | state | routine |
 | --- | --- |
 | empty | `inc_fuel`, `update_hisco` |
-| partial | `is_actor_close`, `explode_bullets`, `draw_enemy_base`, `draw_enemies`, `proc_60` |
+| partial | `is_actor_close`, `explode_bullets`, `draw_enemy_base`, `draw_enemies` |
 
-`update_fuel` was the third empty one and is now done — it alone was worth 131 frames. The
-harness is the tool for prioritising the rest: implement one, re-measure, see what it buys.
-`proc_60` is now known to be reached from frame 13, so it is the first of these that the
-comparison actually exercises.
+`update_fuel` and `proc_60` were two of the empty ones and are now done: `update_fuel` was
+worth 131 frames on its own, `proc_60` another 16. The harness is the tool for prioritising the
+rest: implement one, re-measure, see what it buys.
 
-One real bug was fixed along the way and changed nothing measurable: `proc_58` ended
-`while (dh & 80)` — decimal 80, i.e. `50h` — where `2913:2C35` is `test dh,dh` / `js`, a test
-of bit 7. It is now `0x80`. `dh` is only ever `FFh` or `00h` during the demo, so both spellings
-happened to agree; it would have diverged the moment it wasn't.
+Two constants were wrong and are now fixed. `proc_58` ended `while (dh & 80)` — decimal 80,
+i.e. `50h` — where `2913:2C35` is `test dh,dh` / `js`, a test of bit 7; `dh` is only ever `FFh`
+or `00h` during the demo so both spellings happened to agree, but it would have diverged the
+moment it wasn't. The real one was in `proc_60`'s caller: `2913:2775` does
+`mov al,dl / sub dl,vel_magn[si] / jns loc_302`, and the port never did that subtraction, so an
+actor that had just chosen a new count stored it undecremented and ran one step long. That was
+the frame-12 divergence.
 
 ## Comparing state, not just pixels
 
@@ -102,7 +81,7 @@ Two cautions, both learned the hard way:
 
 ## What to do next
 
-**Audit `proc_58`, `proc_45` and `rndnum` against the disassembly**, as described above.
+**Take the frame-148 pixel divergence**, then the frame-134 state one — both described above.
 
 When it moves, commit the new baseline. The tool prints `IMPROVED: update emu/baseline.txt to
 N`; a human commits it. **The tool never rewrites that file**, because a number that always
