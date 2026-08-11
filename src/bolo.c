@@ -285,6 +285,70 @@ uint8_t var_214e[81]; // *(2913:54B8=0)
 //   uint8_t var_215e[41]; //+40 *(2913:54E0=0)
 // } s2;
 
+/// Raw bytes: the port's layout is the original's.
+#define STATE_VAR(addr, var) \
+  { (addr), #var, &(var), (uint16_t)sizeof(var), 1, 1 }
+/// `n` elements the original keeps in one byte and the port widened.
+#define STATE_VAR_LOW_BYTE(addr, var, n) \
+  { (addr), #var, &(var), (n), (uint8_t)sizeof((var)[0]), 1 }
+
+/// The mirrored state, for bolo_state_table(). See BoloStateVar in bolo.h for
+/// what belongs here and what deliberately does not. Kept ordered by address
+/// and non-overlapping, which emu/test_state_table.c checks: a wrong address
+/// or size here compares the wrong bytes and invents a divergence.
+static const BoloStateVar g_state_table[] = {
+    STATE_VAR(0x2F68, rnd_state),
+    STATE_VAR(0x2F88, time_5bit),
+    // alist_buf and maze_buf are macros pointing into a guarded buffer, so
+    // sizeof would measure the guard too; both are exactly 64x64.
+    {0x2F89, "alist_buf", alist_buf, (MAZE_WIDTH * MAZE_HEIGHT), 1, 1},
+    {0x3F89, "maze_buf", maze_buf, (MAZE_WIDTH * MAZE_HEIGHT), 1, 1},
+    STATE_VAR(0x4F89, var_182e),
+    STATE_VAR(0x4F95, kbdin_key),
+    STATE_VAR(0x4F96, lives),
+    STATE_VAR(0x4F97, fuel_level_e),
+    STATE_VAR(0x4F99, fuel_disp_e),
+    STATE_VAR(0x4F9A, var_186e),
+    STATE_VAR(0x4F9B, ship_cellx),
+    STATE_VAR(0x4FC5, ship_celly),
+    STATE_VAR(0x4FEF, ship_ofsx),
+    STATE_VAR(0x5019, ship_ofsy),
+    STATE_VAR(0x5043, coll_flags1),
+    STATE_VAR(0x506D, var_188e),
+    STATE_VAR(0x5097, ship_kind),
+    STATE_VAR(0x50B7, vel_magn),
+    STATE_VAR(0x50D7, ship_angle),
+    STATE_VAR(0x50F7, next_actor),
+    STATE_VAR(0x5117, prev_actor),
+    STATE_VAR(0x5177, gun_angle),
+    STATE_VAR(0x5178, vel_angle),
+    // The original holds these in a byte each -- `mov bl,ds:bullet_x_e[si]` at
+    // 2913:163E -- and the port widened them to int16_t.
+    STATE_VAR_LOW_BYTE(0x5179, bullet_x, NUM_ACTORS32),
+    STATE_VAR_LOW_BYTE(0x5199, bullet_y, NUM_ACTORS32),
+    STATE_VAR(0x51B9, bullet_flags),
+    STATE_VAR(0x51D9, bullet_angle),
+    STATE_VAR(0x51F9, ship_fire),
+    STATE_VAR(0x5219, fire_req),
+    STATE_VAR(0x521A, base_194e),
+    STATE_VAR(0x5220, base_cellx),
+    STATE_VAR(0x5226, base_celly),
+    STATE_VAR(0x522C, base_cellfl),
+    STATE_VAR(0x5232, arr_1e),
+    STATE_VAR(0x5238, arr_2e),
+    STATE_VAR(0x523E, base_bits_top),
+    STATE_VAR(0x5292, base_bits_bottom),
+    STATE_VAR(0x52E6, base_bits_right),
+    STATE_VAR(0x538E, base_bits_left),
+};
+#undef STATE_VAR
+#undef STATE_VAR_LOW_BYTE
+
+const BoloStateVar *bolo_state_table(unsigned *count) {
+  *count = (unsigned)(sizeof(g_state_table) / sizeof(g_state_table[0]));
+  return g_state_table;
+}
+
 typedef enum AsyncResult {
   AS_UNWIND,
   AS_NORMAL,
@@ -3890,7 +3954,8 @@ static DLDH proc_58(int si, uint8_t dh) {
       return (DLDH){.dl = rndnum(p45res - vel_magn[si]) + 1 + vel_magn[si], .dh = dh};
     }
     limit = 2;
-  } while (dh & 80);
+    // 2913:2C35  test dh,dh / js loc_376 -- retry while dh is negative.
+  } while (dh & 0x80);
 
   return (DLDH){.dl = p45res, .dh = dh};
 }

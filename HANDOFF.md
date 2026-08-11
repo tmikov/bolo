@@ -1,8 +1,8 @@
 # HANDOFF
 
-Written 2026-08-10. **All three plans of the fidelity harness are done, and the first
-divergence it found has been closed.** This describes a point in time — replace it when the
-baseline moves again.
+Written 2026-08-10. **All three plans of the fidelity harness are done, the first divergence
+it found has been closed, and the harness now compares game state as well as pixels.** This
+describes a point in time — replace it when the baseline moves again.
 
 ## The headline
 
@@ -18,23 +18,43 @@ attract demo runs. `emu/baseline.txt` reads `131`.
 That is the whole screen — maze, ship, HUD, gauge, radar, compass — matching byte for byte,
 frame after frame, against the original binary executing under the interpreter.
 
-## Next: frame 132
+## Next: `proc_58` returns the wrong number at frame 12
 
-Frame 132 diverges wholesale: 2249 of 32000 bytes, bounding box `x 0..292, y 0..192`. Looking
-at the two frames side by side, **the ship is in a different part of the maze**, and the
-compass and base indicator follow it. This is a **game-state** divergence, not a drawing one —
-something in movement, collision or actor update has taken a different path by then, and every
-later frame is downstream of it.
+The pixels first differ at frame 132, but **the game state first differs at frame 12**. The
+screen matched for 120 frames after that only because the actors that diverged were not on it.
+Comparing state rather than pixels is now built in — see "Comparing state" below.
 
-That makes it a different kind of hunt from the gauge. The gauge was a missing draw call and
-the diff image pointed straight at it; this one needs the *first* frame where the ship's
-position differs, which is not necessarily 132 — the state can diverge silently before it
-shows on screen. Compare `ship_cellx/celly/ofsx/ofsy` between the two sides per frame to find
-the real first divergence, rather than starting from the pixels.
+The first divergence is one value:
 
-The likely suspects are the routines still unimplemented (below), plus `CLAMP_ACTOR_TO_MAZE`,
-which is a deliberate logic deviation and is exactly the kind of thing that would move an actor
-differently.
+```
+state: var_188e differs at frame 12, element 31 (508Ch): original 0Dh, port 10h
+```
+
+`var_188e[31]` is a per-actor countdown, decremented by `vel_magn` each frame; when it runs
+below `vel_magn` the actor picks a new heading and a new count. Both sides agree exactly for
+the whole preceding run and both start a new count at frame 12 — the original picks 13, the
+port picks 16. The value comes from `proc_58` (`2913:2BF4`), through
+`dl = rndnum(p45res - vel_magn) + 1 + vel_magn`.
+
+**It is not the randomness.** `rnd_state` and `time_5bit` both still match at the end of frame
+12 and only diverge at 13, so the two sides drew identical random numbers through the frame in
+question. The actor's position, angle, `vel_magn` and the maze all match at that point too. So
+`proc_58` returned a different number from identical inputs and identical draws: the bug is
+arithmetic, in `proc_58`, in `proc_45` (its eight per-angle handlers `proc_46`..`proc_53`), or
+in `rndnum`/`rnd_update`. Auditing those against the disassembly is the next task.
+
+Three things are already ruled out, each by measurement rather than argument:
+
+- **The `proc_60` stub is not the cause.** It looked like the obvious suspect — the port's is
+  empty and its caller leaves `dl` stale — but instrumenting the stub shows it is first reached
+  at frame **13**, after the divergence. It is still unimplemented and still matters; it is
+  just not first.
+- **The RNG seed is not the cause.** `time_5bit = time_tick & 1Fh` at the end of level select
+  seeds the RNG from the timer, and the harness deliberately feeds the two sides different tick
+  schedules, so this looked like a harness artifact. Measured: both sides seed identically and
+  `time_5bit` agrees through frame 12. The `IDLE_THRESHOLD` deviation does not reach the RNG.
+- **`CLAMP_ACTOR_TO_MAZE` is not implicated at frame 12** — the divergence is a returned value,
+  not a rejected move.
 
 ## What is still missing
 
@@ -47,15 +67,42 @@ The port has 8 routines carrying `FIXME`. Three are entirely empty, five partial
 
 `update_fuel` was the third empty one and is now done — it alone was worth 131 frames. The
 harness is the tool for prioritising the rest: implement one, re-measure, see what it buys.
+`proc_60` is now known to be reached from frame 13, so it is the first of these that the
+comparison actually exercises.
+
+One real bug was fixed along the way and changed nothing measurable: `proc_58` ended
+`while (dh & 80)` — decimal 80, i.e. `50h` — where `2913:2C35` is `test dh,dh` / `js`, a test
+of bit 7. It is now `0x80`. `dh` is only ever `FFh` or `00h` during the demo, so both spellings
+happened to agree; it would have diverged the moment it wasn't.
+
+## Comparing state, not just pixels
+
+`bolo_state_table()` in `src/bolo.c` lists the port's variables against the address the
+original keeps each at, which turns the `// 4F9Bh` annotations from documentation into
+something checkable. `--compare` walks it every frame and reports each variable the first time
+it differs; `--watch NAME[:ELEMENT]` prints both sides' value of one of them every frame, which
+is what shows a sequence going out of step.
+
+```sh
+./build/emu/bolotest --compare --ticks 400 --out /tmp/cmp
+./build/emu/bolotest --compare --ticks 400 --out /tmp/cmp --watch var_188e:31
+```
+
+Two cautions, both learned the hard way:
+
+- **A wrong address or size in that table invents a divergence.** It compares the port's
+  variable against the original's *neighbouring* one and reports a difference that does not
+  exist. `bullet_x`/`bullet_y` were entered at the right addresses with the port's widened
+  `int16_t` sizes, so each read 64 bytes where the original keeps 32, and the tool duly
+  reported a difference at frame 1. `test_state_table` now fails on any entry that overlaps
+  the next.
+- **The table is deliberately partial.** `time_tick` and `last_tick` are left out because the
+  harness delivers ticks on its own schedule; `dest_seg` and `pactor_list` because the port
+  represents them differently on purpose.
 
 ## What to do next
 
-**Chase the frame-132 divergence**, as described above.
-
-```sh
-./build/emu/bolotest --compare --ticks 400 --out /tmp/cmp --continue-past-diff
-python3 -c "from PIL import Image; Image.open('/tmp/cmp/diff-00132.ppm').save('/tmp/d.png')"
-```
+**Audit `proc_58`, `proc_45` and `rndnum` against the disassembly**, as described above.
 
 When it moves, commit the new baseline. The tool prints `IMPROVED: update emu/baseline.txt to
 N`; a human commits it. **The tool never rewrites that file**, because a number that always
@@ -77,11 +124,12 @@ The difference is the finding. That rule is in `CLAUDE.md` too.
 
 ## Where things stand
 
-Branch `work`, nothing pushed. `ctest` is 14/14 green, the build
-is warning-free under `-Wall -Wextra`, and `clang-format --dry-run -Werror emu/*.c emu/*.h`
-exits 0. Nothing under `disasm/` has ever changed. `src/bolo.c` was untouched for the whole of
-plan 3; the only change to it since is `update_fuel`, which was implementing a missing routine,
-not adjusting the port to flatter the comparison.
+Branch `work`, nothing pushed. `ctest` is 15/15 green, the build is warning-free under
+`-Wall -Wextra`, and `clang-format --dry-run -Werror` exits 0 on everything but the two known
+pre-existing `VID_OFFSET` violations in `src/bolo.c`. Nothing under `disasm/` has ever changed.
+`src/bolo.c` was untouched for the whole of plan 3; every change to it since has been
+implementing a missing routine or fixing a wrong constant, never adjusting the port to flatter
+the comparison.
 
 | Component | What it is |
 | --- | --- |
@@ -89,12 +137,12 @@ not adjusting the port to flatter the comparison.
 | `emu/i8086.{c,h}` | The CPU: decoder (validated at all 3439 addresses), ALU with exact 8086 flag semantics, executor. |
 | `emu/machine.{c,h}` | The XT: 1MB memory, BIOS data area, EGA planes at A0000, seven I/O ports, five BIOS/DOS services. |
 | `emu/runner.{c,h}` | The run loop: tick delivery, frame capture, runaway guards. |
-| `emu/bolotest.c` | Three modes — dump the port's frames, dump the original's, or compare them. |
+| `emu/bolotest.c` | Three modes — dump the port's frames, dump the original's, or compare them. Comparison covers planes and game state. |
 | `emu/baseline.txt` | The ratchet. |
 | `emu/golden-original.txt` | 60 FNV-1a checksums pinning the *original* side, independent of the port. |
 
-Tests: `link`, `ppm`, `ega_render`, `lst`, `decode`, `alu`, `exec`, `machine`, `runner`,
-`golden`, `headless_frames`, `determinism`, `pump_invariance`, `compare`.
+Tests: `link`, `ppm`, `ega_render`, `state_table`, `lst`, `decode`, `alu`, `exec`, `machine`,
+`runner`, `golden`, `headless_frames`, `determinism`, `pump_invariance`, `compare`.
 
 ## Where the spec is wrong
 

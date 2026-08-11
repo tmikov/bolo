@@ -30,7 +30,7 @@ static void usage(const char *argv0) {
       "usage: %s [--frames N] [--pump N] [--out DIR] [--max-ticks N]\n"
       "       %s --original DIR [--frames N] [--golden FILE] [--check-golden FILE]\n"
       "       %s --compare [--ticks N] [--pump N] [--out DIR] [--baseline FILE]\n"
-      "                    [--continue-past-diff]\n"
+      "                    [--continue-past-diff] [--watch NAME[:ELEMENT]]\n"
       "\n"
       "  --frames N          stop after N completed frames (default 100)\n"
       "  --pump N            async_start() calls per tick (default 4)\n"
@@ -45,7 +45,9 @@ static void usage(const char *argv0) {
       "  --compare           run both sides and compare their planes per frame\n"
       "  --ticks N           with --compare, run at most N timer ticks (default 1000)\n"
       "  --baseline FILE     with --compare, the highest frame count known to match\n"
-      "  --continue-past-diff  keep comparing after the first divergence\n",
+      "  --continue-past-diff  keep comparing after the first divergence\n"
+      "  --watch NAME[:ELEMENT]  print both sides' value of one mirrored\n"
+      "                      variable every frame\n",
       argv0,
       argv0,
       argv0);
@@ -348,6 +350,83 @@ static bool read_baseline(const char *path, long *value) {
   return true;
 }
 
+/// Compare the port's mirrored game state against the original's, reporting
+/// each variable the first time it differs and only then.
+///
+/// The plane comparison sees state only once it has reached the screen, and a
+/// frame that diverges wholesale says nothing about which variable moved
+/// first. This reads both sides' variables directly, so the answer to "what
+/// diverged" is a name rather than a bounding box.
+///
+/// `firstDiff[i]` is -1 until entry i differs, then the frame it first did.
+static void compare_state(const Machine *m, long frame, long *firstDiff) {
+  unsigned count;
+  const BoloStateVar *table = bolo_state_table(&count);
+
+  for (unsigned i = 0; i != count; ++i) {
+    if (firstDiff[i] >= 0)
+      continue; // already reported; it stays different
+
+    const uint8_t *portBytes = (const uint8_t *)table[i].data;
+    bool reported = false;
+    for (unsigned e = 0; e != table[i].count && !reported; ++e) {
+      for (unsigned b = 0; b != table[i].width; ++b) {
+        uint16_t addr = (uint16_t)(table[i].addr + e * table[i].width + b);
+        uint8_t origByte = machine_peek(m, i8086_linear(MACHINE_LOAD_SEG, addr));
+        uint8_t portByte = portBytes[e * table[i].stride + b];
+        if (origByte == portByte)
+          continue;
+
+        firstDiff[i] = frame;
+        printf(
+            "  state: %s differs at frame %ld, element %u (%04Xh): original %02Xh, port %02Xh\n",
+            table[i].name,
+            frame,
+            e,
+            addr,
+            origByte,
+            portByte);
+        reported = true;
+        break;
+      }
+    }
+  }
+}
+
+/// Print both sides' value of one element of one mirrored variable, every
+/// frame.
+///
+/// compare_state() reports where a variable first differs, which names the
+/// suspect but not its history. A divergence usually turns out to be a
+/// sequence that went out of step some frames earlier, and that is only
+/// visible as both sides' values side by side over time.
+static void watch_state(const Machine *m, long frame, const char *name, unsigned element) {
+  unsigned count;
+  const BoloStateVar *table = bolo_state_table(&count);
+
+  for (unsigned i = 0; i != count; ++i) {
+    if (strcmp(table[i].name, name) != 0)
+      continue;
+    if (element >= table[i].count) {
+      printf("  watch: %s has only %u elements\n", name, table[i].count);
+      return;
+    }
+
+    const uint8_t *portBytes = (const uint8_t *)table[i].data;
+    printf("  watch: frame %ld %s[%u] original", frame, name, element);
+    for (unsigned b = 0; b != table[i].width; ++b) {
+      uint16_t addr = (uint16_t)(table[i].addr + element * table[i].width + b);
+      printf(" %02Xh", machine_peek(m, i8086_linear(MACHINE_LOAD_SEG, addr)));
+    }
+    printf(", port");
+    for (unsigned b = 0; b != table[i].width; ++b)
+      printf(" %02Xh", portBytes[element * table[i].stride + b]);
+    printf("\n");
+    return;
+  }
+  printf("  watch: no mirrored variable named %s\n", name);
+}
+
 /// Run the port until bolo_frame_count() == frame, spending at most the
 /// remaining tick budget. Returns false if the budget ran out first.
 ///
@@ -373,7 +452,9 @@ static int run_compare(
     long maxTicks,
     long pump,
     const char *baselinePath,
-    bool continuePastDiff) {
+    bool continuePastDiff,
+    const char *watchName,
+    unsigned watchElement) {
   long baseline = 0;
   if (baselinePath && !read_baseline(baselinePath, &baseline))
     return 1;
@@ -417,6 +498,20 @@ static int run_compare(
     runner_destroy(r);
     return 1;
   }
+
+  // One entry per mirrored variable, -1 until it first differs. Allocated
+  // rather than sized by a constant so adding a variable to bolo.c's table
+  // needs no change here.
+  unsigned stateCount;
+  bolo_state_table(&stateCount);
+  long *stateFirstDiff = malloc(stateCount * sizeof(*stateFirstDiff));
+  if (!stateFirstDiff) {
+    fprintf(stderr, "out of memory\n");
+    runner_destroy(r);
+    return 1;
+  }
+  for (unsigned i = 0; i != stateCount; ++i)
+    stateFirstDiff[i] = -1;
 
   int status = 0;
   long ticks = 0;
@@ -465,6 +560,10 @@ static int run_compare(
     }
 
     ++compared;
+    compare_state(runner_machine(r), k, stateFirstDiff);
+    if (watchName)
+      watch_state(runner_machine(r), k, watchName, watchElement);
+
     FrameDiff d = compare_planes(orig, port);
     if (d.bytes == 0)
       continue;
@@ -493,6 +592,7 @@ static int run_compare(
   }
 
   runner_destroy(r);
+  free(stateFirstDiff);
   if (status != 0)
     return status;
 
@@ -541,6 +641,8 @@ int main(int argc, char **argv) {
   const char *baseline = NULL;
   bool compare = false;
   bool continuePastDiff = false;
+  const char *watchName = NULL;
+  unsigned watchElement = 0;
   bool framesSet = false;
   bool maxTicksSet = false;
   bool ticksSet = false;
@@ -549,6 +651,16 @@ int main(int argc, char **argv) {
     bool last = i + 1 >= argc;
     if (strcmp(argv[i], "--compare") == 0) {
       compare = true;
+    } else if (strcmp(argv[i], "--watch") == 0 && i + 1 < argc) {
+      // NAME or NAME:ELEMENT.
+      static char buf[64];
+      snprintf(buf, sizeof(buf), "%s", argv[++i]);
+      char *colon = strchr(buf, ':');
+      if (colon) {
+        *colon = '\0';
+        watchElement = (unsigned)strtoul(colon + 1, NULL, 0);
+      }
+      watchName = buf;
     } else if (strcmp(argv[i], "--continue-past-diff") == 0) {
       continuePastDiff = true;
     } else if (strcmp(argv[i], "--ticks") == 0 && !last) {
@@ -589,7 +701,7 @@ int main(int argc, char **argv) {
   // A flag that applies to another mode is rejected rather than ignored, in
   // both directions: silently running a different number of frames than was
   // asked for is how a harness comes to measure something nobody intended.
-  if (!compare && (baseline || continuePastDiff || ticksSet)) {
+  if (!compare && (baseline || continuePastDiff || ticksSet || watchName)) {
     const char *flag = baseline ? "--baseline"
         : continuePastDiff      ? "--continue-past-diff"
                                 : "--ticks";
@@ -611,7 +723,8 @@ int main(int argc, char **argv) {
   }
 
   if (compare)
-    return run_compare(out, compareTicks, pump, baseline, continuePastDiff);
+    return run_compare(
+        out, compareTicks, pump, baseline, continuePastDiff, watchName, watchElement);
   if (original)
     return run_original(original, frames, golden, checkGolden);
 

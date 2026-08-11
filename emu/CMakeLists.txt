@@ -9,6 +9,10 @@ add_executable(test_ppm test_ppm.c)
 target_link_libraries(test_ppm bolo_ppm)
 add_test(NAME ppm COMMAND test_ppm)
 
+add_executable(test_state_table test_state_table.c)
+target_link_libraries(test_state_table bologame)
+add_test(NAME state_table COMMAND test_state_table)
+
 add_executable(bolotest bolotest.c)
 
 add_executable(test_ega_render test_ega_render.c)

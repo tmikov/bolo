@@ -105,4 +105,41 @@ unsigned bolo_frame_count(void);
 /// loop delay and length. NULL (the default) discards sounds.
 extern void (*bolo_sound_sink)(int ch_delay, int cl_length);
 
+/// One piece of game state that the port and the original both keep, named by
+/// the address the original keeps it at.
+///
+/// The port mirrors the original's data segment (see "Game state layout" in
+/// CLAUDE.md), so a variable annotated `// 4F9Bh` in bolo.c holds the same
+/// bytes as the original's 2913:4F9B. This makes that annotation checkable
+/// rather than merely documentary, and lets the comparison harness answer
+/// "which variable diverged first", which pixels cannot: game state can differ
+/// for many frames before it reaches the screen.
+typedef struct BoloStateVar {
+  /// Offset in the original's data segment.
+  uint16_t addr;
+  /// The port's name for it, for reporting.
+  const char *name;
+  /// The port's storage.
+  const void *data;
+  /// Number of elements.
+  uint16_t count;
+  /// Bytes per element in the port's storage.
+  uint8_t stride;
+  /// Bytes per element to compare, which is the original's width. Less than
+  /// `stride` where the port widened a variable the original kept in 8 bits;
+  /// then only the low byte is comparable, and the port carrying a value the
+  /// original could not hold is a divergence this cannot see.
+  uint8_t width;
+} BoloStateVar;
+
+/// The table of comparable state, ordered by address; `*count` receives its
+/// length.
+///
+/// Deliberately partial. It omits state whose representation differs on
+/// purpose (dest_seg is a byte offset here and a segment there, pactor_list
+/// holds host pointers) and everything derived from the timer, because the
+/// harness delivers ticks on its own schedule -- see IDLE_THRESHOLD in
+/// emu/runner.h. Those would report a difference that is designed in.
+const BoloStateVar *bolo_state_table(unsigned *count);
+
 #endif // BOLO_H

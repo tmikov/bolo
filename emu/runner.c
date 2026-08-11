@@ -191,6 +191,10 @@ unsigned runner_time_tick(const Runner *r) {
   return machine_peek(r->machine, i8086_linear(MACHINE_LOAD_SEG, 0x2F67));
 }
 
+const Machine *runner_machine(const Runner *r) {
+  return r->machine;
+}
+
 const char *runner_error(const Runner *r) {
   return r->hasError ? r->errorBuf : NULL;
 }

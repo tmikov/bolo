@@ -124,6 +124,12 @@ unsigned runner_frame_count(const Runner *r);
 /// handler increments and both wait loops compare against.
 unsigned runner_time_tick(const Runner *r);
 
+/// The machine the guest runs on, for reading its memory with machine_peek.
+///
+/// Exists so the comparison can read the original's game state and not only
+/// its planes: state diverges before it reaches the screen.
+const Machine *runner_machine(const Runner *r);
+
 /// Non-NULL once a run has failed. Every RUN_ERROR sets it.
 const char *runner_error(const Runner *r);
 
