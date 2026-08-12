@@ -2586,10 +2586,12 @@ static void explode_bullets(unsigned vidSeg) {
           bits <<= 1;
 
         if (x - 8 >= 0 && x - 8 < MAZE_SCREEN_W)
-          ega_or(vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
+          // 2913:1996  or es:[di-1],ah -- in OR mode.
+          ega_or_rmw(vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
 
         if (x >= 0 && x < MAZE_SCREEN_W)
-          ega_or(vidOfs, (uint8_t)bits, egaMask);
+          // 2913:199F  or es:[di],al
+          ega_or_rmw(vidOfs, (uint8_t)bits, egaMask);
       }
 
       ++y;
@@ -2705,16 +2707,17 @@ static void draw_explosion(unsigned vidSeg, int actor) {
         bits <<= 1;
 
       if (x - 24 >= 0 && x - 24 < MAZE_SCREEN_W)
-        ega_or(vidOfs - 3, (uint8_t)(bits >> 24), egaMask);
+        // 2913:1A7C, 1A88, 1A94, 1A9D -- `or es:[di-n],reg`, in OR mode.
+        ega_or_rmw(vidOfs - 3, (uint8_t)(bits >> 24), egaMask);
 
       if (x - 16 >= 0 && x - 16 < MAZE_SCREEN_W)
-        ega_or(vidOfs - 2, (uint8_t)(bits >> 16), egaMask);
+        ega_or_rmw(vidOfs - 2, (uint8_t)(bits >> 16), egaMask);
 
       if (x - 8 >= 0 && x - 8 < MAZE_SCREEN_W)
-        ega_or(vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
+        ega_or_rmw(vidOfs - 1, (uint8_t)(bits >> 8), egaMask);
 
       if (x >= 0 && x < MAZE_SCREEN_W)
-        ega_or(vidOfs, (uint8_t)bits, egaMask);
+        ega_or_rmw(vidOfs, (uint8_t)bits, egaMask);
     }
 
     bmpPtr += 3;
