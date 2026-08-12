@@ -349,6 +349,11 @@ static const BoloStateVar g_state_table[] = {
     STATE_VAR(0x5292, base_bits_bottom),
     STATE_VAR(0x52E6, base_bits_right),
     STATE_VAR(0x538E, base_bits_left),
+    // These three share one buffer here (see _ext_var_207e), so sizeof would
+    // measure all of it; each entry is the original's own extent.
+    {0x5436, "var_207e", var_207e, 81, 1, 1},
+    {0x5487, "buf49", buf49, 7 * 7, 1, 1},
+    {0x54B8, "var_214e", var_214e, 81, 1, 1},
 };
 #undef STATE_VAR
 #undef STATE_VAR_LOW_BYTE
