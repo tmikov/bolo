@@ -2378,31 +2378,16 @@ typedef struct {
 } XYDiv;
 
 /// Divide x and y by cell size and return the quotiens and remainders.
+/// Split screen coordinates into a cell index and an offset within the cell.
+///
+/// The original does not divide: it subtracts CELL_SIZE in a loop and stops on
+/// unsigned 8-bit wraparound, which is correct only for inputs in [0..207].
+/// The maze view is never wider than that, so a plain division agrees.
 /// 2913:17CC                       proc_21         proc    near
 static XYDiv div_cell_size(int x, int y) {
-  if (0) {
-    uint8_t xcells = -1;
-    do {
-      ++xcells;
-      x -= CELL_SIZE;
-      // NOTE: originally this condition used clever unsigned 8-bit arithmetic in
-      // order to handle inputs in range [0..207]: ((uint8_t)bl_x < (uint8_t)-CELL_SIZE)
-    } while (x >= 0);
-    x += CELL_SIZE;
-
-    uint8_t ycells = -1;
-    do {
-      ++ycells;
-      y -= CELL_SIZE;
-    } while (y >= 0);
-    y += CELL_SIZE;
-
-    return (XYDiv){.x_quot = xcells, .y_quot = ycells, .x_rem = x, .y_rem = y};
-  } else {
-    div_t xd = div(x, CELL_SIZE);
-    div_t yd = div(y, CELL_SIZE);
-    return (XYDiv){.x_quot = xd.quot, .y_quot = yd.quot, .x_rem = yd.rem, .y_rem = yd.rem};
-  }
+  div_t xd = div(x, CELL_SIZE);
+  div_t yd = div(y, CELL_SIZE);
+  return (XYDiv){.x_quot = xd.quot, .y_quot = yd.quot, .x_rem = xd.rem, .y_rem = yd.rem};
 }
 
 /// Invoked upon a bullet collision. Coordinates are screen-relative.
@@ -2469,7 +2454,8 @@ static void collide_cell(
     if (dist < -6 || dist >= 7)
       continue;
 
-    uint8_t coll70 = coll_flags1[act] & 70;
+    // 2913:18F6  and ah,70h
+    uint8_t coll70 = coll_flags1[act] & 0x70;
     if (coll70 == 0x60)
       continue;
 
@@ -2747,9 +2733,42 @@ static uint8_t rnd8(uint8_t mask) {
   return var_142[rnd_update(64)] & mask;
 }
 
+/// Award fuel and score for a kill or a pickup, and redraw the score.
+///
+/// `dl` is a bit picking which score digit the level number is added to: 1 the
+/// units, 2 the tens, 4 the hundreds. The original spells that as a shift per
+/// digit, skipping the add until the bit falls out. Fuel comes in two sizes
+/// only, the larger one for anything past the first bit.
 /// 2913:1CC7                       inc_fuel        proc    near
 static void inc_fuel(uint8_t dl) {
-  // FIXME
+  fuel_level_e += dl <= 1 ? 0x64 : 0x1F40;
+  if (fuel_level_e > 0x3FFF)
+    fuel_level_e = 0x3FFF;
+
+  // strb_score starts out as leading spaces, and a space stands in for a zero
+  // the first time a column is carried into.
+  uint8_t carry = level + 1;
+  for (int pos = 5; pos >= 0; --pos) {
+    uint8_t digit = (uint8_t)strb_score[pos];
+    if (digit >= SBOL_SPACE)
+      digit = 0;
+
+    dl >>= 1;
+    if (dl == 0) {
+      digit += carry;
+      carry = 0;
+      if (digit >= 10) {
+        digit -= 10;
+        carry = 1;
+      }
+    }
+
+    strb_score[pos] = (SBOL)digit;
+    if (carry == 0)
+      break;
+  }
+
+  disp_score();
 }
 
 /// 2913:1D17

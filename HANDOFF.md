@@ -12,29 +12,32 @@ The harness works, and it has an answer.
 written from its own disassembly, alongside the C port, with their EGA planes compared frame
 by frame.
 
-**The port is frame-exact against the original for the first 160 frames**, out of the 440 the
-attract demo runs. `emu/baseline.txt` reads `160`.
+**The port is frame-exact against the original for the first 163 frames**, out of the 440 the
+attract demo runs. `emu/baseline.txt` reads `163`.
 
 That is the whole screen — maze, ship, HUD, gauge, radar, compass — matching byte for byte,
 frame after frame, against the original binary executing under the interpreter.
 
-## Next: frame 161
+## Next: frame 164
 
-State and pixels now diverge at the same frame for the first time, which is a good sign that
-nothing is hiding: `fuel_level_e`, and `coll_flags1`/`var_188e` for actor 7. The pixel
-difference is at `x 281..286, y 44..50` -- in the status panel, not the maze.
+Actor 30 diverges first, at frame 162 in state -- `ship_ofsy`, `ship_angle`, `var_188e` -- with
+the pixels following at 164. `var_188e[30]` going to 00h in the original against 20h in the
+port is the same shape as the frame-12 bug: a countdown reset that one side made and the other
+did not.
 
-The method that has worked three times running, and is worth reaching for first:
+The method, which has now worked four times:
 
 1. `--compare` names the first variable to differ and the frame.
 2. If `rnd_state` and `time_5bit` are among them, the two sides made a different *number* of
-   random draws that frame, and the cause is upstream of the RNG rather than in it. Trace every
-   draw on both sides and diff the sequences -- the first row where they differ says which
-   routine went its own way, and on the guest side the return address on the stack names the
-   call site outright.
-3. Only then read the disassembly for that routine.
+   random draws that frame, so the cause is upstream of the RNG rather than in it. Trace every
+   draw on both sides and diff the sequences; the first differing row names the routine, and on
+   the guest side the return address on the stack names the call site outright.
+3. If they are *not* among them, as at frame 161, the divergence is plain logic: trace the
+   routine's arguments on both sides and walk in until they stop agreeing.
+4. Only then read the disassembly.
 
-Reasoning from the disassembly first has been slower and twice pointed at the wrong routine.
+Reasoning from the disassembly first has been slower every time, and twice pointed at the wrong
+routine.
 
 ## What is still missing
 
@@ -42,12 +45,17 @@ The port has 5 routines carrying `FIXME`. Two are entirely empty, three partial:
 
 | state | routine |
 | --- | --- |
-| empty | `inc_fuel`, `update_hisco` |
+| empty | `update_hisco` |
 | partial | `explode_bullets`, `draw_enemy_base`, `draw_enemies` |
 
-`update_fuel` and `proc_60` were two of the empty ones and are now done: `update_fuel` was
-worth 131 frames on its own, `proc_60` another 16, and three wrong constants another 13. The
-harness is the tool for prioritising the rest: implement one, re-measure, see what it buys.
+`inc_fuel` has three call sites in the original (2913:191C, 1E81, 2596) and the port so far has
+only the first. The other two live in routines that are still partial, so they are waiting on
+those rather than missing outright.
+
+`update_fuel`, `proc_60` and `inc_fuel` were three of the empty ones and are now done:
+`update_fuel` was worth 131 frames on its own, `proc_60` another 16, three wrong constants
+another 13, and frame 161 another 3. The harness is the tool for prioritising the rest:
+implement one, re-measure, see what it buys.
 
 Four constants were wrong and are now fixed. `proc_58` ended `while (dh & 80)` — decimal 80,
 i.e. `50h` — where `2913:2C35` is `test dh,dh` / `js`, a test of bit 7; `dh` is only ever `FFh`
@@ -64,6 +72,11 @@ where the port had `>= 31`. The same routine had one more: at 2913:15A5 a `jb` w
 displacement of *zero* lands on the instruction it falls through to, so the `cmp al,0EBh` above
 it decides nothing and the case is just `ofsy < 0` -- the port had encoded the dead comparison
 as `< -21`, and its own FIXME comment had already guessed as much.
+
+Frame 161 took a fourth, of a different kind: `div_cell_size` built its result with
+`.x_rem = yd.rem, .y_rem = yd.rem`, so the x offset within the cell was the y division's
+remainder. A bullet that should have hit an enemy missed by seventeen pixels. Nothing about the
+disassembly would have suggested it -- the arguments simply stopped agreeing partway down.
 
 ## Comparing state, not just pixels
 
