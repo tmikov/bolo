@@ -27,21 +27,29 @@ the port is faithful — it means the demo has stopped exercising the difference
 fires under human control, never loses a life, never finishes a level, and never reaches the
 high-score entry.
 
-Three ways forward, in rough order of value:
+The two cheap avenues are now closed, both by measurement:
 
-1. **Drive input.** `machine_press_key()` exists and the comparison does not use it. A recorded
-   key script fed to both sides would exercise firing, dying and level completion — where
-   `update_hisco` and the remaining partial routines live.
-2. **Sweep the remaining read-modify-writes.** Nine `or es:[di]` sites still use plain `ega_or`
-   (in `draw_maze`, `explode_bullets`, `draw_explosion`). Each is a latent copy of the bug fixed
-   at frames 209, 297 and 367, and has stayed quiet only because plane 3 happened to be clear
-   beneath it. `ega_or_rmw` is the operation they want. The lone `xor es:[di],al` at 2913:0B4C
-   deserves the same look.
-3. **Audit `ega_write` against the OR-mode window.** The EGA's write function is OR between
-   2913:0238 and 2913:0255, which covers `do_explosions`, `proc_31`, `draw_enemies`, `draw_ship`
-   and `update_bullets`. A plain store the port renders as `ega_write` inside that window is a
-   replace where the hardware ORs — exactly the frame-367 bug. Two such sites are fixed; the
-   others should each be checked against where they run.
+- **The read-modify-write sweep is done.** Every `or es:[di]` in the binary is
+  either converted to `ega_or_rmw` or carries a comment saying why it does not need to be.
+  The four left alone -- `draw_maze`'s three and the fuel gauge's `xor` -- run outside the
+  2913:0238..0255 OR-mode window and are provably indistinguishable from the simple form,
+  because their masks include plane 3 and keep every masked plane equal to it.
+- **`CLAMP_ACTOR_TO_MAZE` never fires.** Instrumented over all 440 frames: zero triggers, and
+  turning it off changes no frame. It stays on anyway, because removing it properly means
+  giving `maze_buf` the neighbours the original has -- the original's runs 3F89h..4F89h and an
+  out-of-range access lands on `var_182e` and the state after it, deterministically, where the
+  port would run off the end of an array. That is a real change, not a deletion.
+
+So the only way forward is **input**. `machine_press_key()` exists on the guest and the
+comparison does not use it; the port has `bolo_key()`. The wrinkle to know before starting:
+both sides already replay the same recorded key script baked into the binary -- `reckeys` in
+bolo.c, from `getkey` at 2913:0648 -- and `getkey` turns *any* real keypress into `SC_F3` and
+abandons the script. So injecting a key does not extend the demo, it ends it and starts a real
+game. Driving gameplay means authoring a script from scratch and deciding what it should
+exercise: firing, dying, finishing a level, the high-score entry.
+
+The natural injection point is a frame boundary rather than a tick, since the two sides run on
+deliberately different tick schedules but the comparison already aligns on completed frames.
 
 ## How these were found
 
