@@ -2106,22 +2106,17 @@ static void proc_17(void) {
   }
 }
 
+/// Is `actor` close enough to the player to shoot at?
+///
+/// The original asks this without ever forming a distance: it splits the cell
+/// difference and the within-cell offset apart, uses the cell difference to
+/// select one of seven tests per axis (2913:15A9 and 2913:15B7 are the jump
+/// tables), and each test is a comparison on the offset alone. The `dist`
+/// comments below are what each case works out to, not something the code
+/// computes. Three cells either way is always close and needs no test, which
+/// is why the middle cases just fall through.
 /// 2913:152B                       proc_18         proc    near
 static bool is_actor_close(int actor) {
-  // FIXME: why not use rel_coords() here? Or simply calculate the distance?
-  if (0) {
-    return abs((ship_cellx[actor] - ship_cellx[0]) * CELL_SIZE + ship_ofsx[actor] - ship_ofsx[0]) <=
-        100 &&
-        abs((ship_celly[actor] - ship_celly[0]) * CELL_SIZE + ship_ofsy[actor] - ship_ofsy[0]) < 96;
-  }
-  if (0) {
-    XYFlag xyf =
-        rel_coords(ship_cellx[actor], ship_celly[actor], ship_ofsx[actor], ship_ofsy[actor]);
-    if (!xyf.success)
-      return false;
-    return xyf.x >= 0 && xyf.x < MAZE_SCREEN_W && xyf.y >= 0 && xyf.y < MAZE_SCREEN_H;
-  }
-
   int hCells = ship_cellx[actor] - ship_cellx[0] + 3;
   if (hCells < 0 || hCells >= 7)
     return false;
@@ -2165,8 +2160,8 @@ static bool is_actor_close(int actor) {
   int ofsy = ship_ofsy[actor] - ship_ofsy[0];
   switch (vCells) {
   case 0:
-    // dist <= 83
-    return ofsy >= 31;
+    // 2913:1589  js loc_126 / cmp al,15h / jae loc_132.  dist <= 93
+    return ofsy >= 0x15;
   case 1:
     // dist <= 93
     return ofsy >= -17;
@@ -2178,10 +2173,11 @@ static bool is_actor_close(int actor) {
     // dist < 95
     return ofsy < 19;
   case 6:
-    // dist < 93
-    return ofsy < -21;
-    // FIXME: originally this was:
-    // return ofsy < 0;
+    // 2913:15A1  jns loc_126 / cmp al,0EBh / jb loc_132 -- where that `jb` has
+    // a displacement of zero, so it lands on the instruction it falls through
+    // to. The comparison decides nothing and the sign test is the whole
+    // condition.  dist < 114
+    return ofsy < 0;
   default:
     assert(false);
     return false;
@@ -3403,9 +3399,14 @@ static void spawn_enemy(int baseIndex) {
   }
 
   if (actor == 0) {
+    // Every actor is in use, so one has to be recycled -- but only for a base
+    // within ten cells of the player either way, and only if the actor being
+    // taken is at least 8 cells off. 2913:238F and 2913:239D compare the
+    // biased difference against 15h; the original's byte compare also catches
+    // a negative difference, which has wrapped past 15h by then.
     int diff_x = base_cellx[baseIndex] - ship_cellx[0] + 10;
     int diff_y = base_celly[baseIndex] - ship_celly[0] + 10;
-    if (diff_x < 0 || diff_x >= 31 || diff_y < 0 || diff_y >= 31 || maxDist < 8) {
+    if (diff_x < 0 || diff_x >= 0x15 || diff_y < 0 || diff_y >= 0x15 || maxDist < 8) {
       base_194e[baseIndex] = 0;
       return;
     }

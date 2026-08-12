@@ -12,47 +12,58 @@ The harness works, and it has an answer.
 written from its own disassembly, alongside the C port, with their EGA planes compared frame
 by frame.
 
-**The port is frame-exact against the original for the first 147 frames**, out of the 440 the
-attract demo runs. `emu/baseline.txt` reads `147`.
+**The port is frame-exact against the original for the first 160 frames**, out of the 440 the
+attract demo runs. `emu/baseline.txt` reads `160`.
 
 That is the whole screen — maze, ship, HUD, gauge, radar, compass — matching byte for byte,
 frame after frame, against the original binary executing under the interpreter.
 
-## Next: an actor at the bottom maze edge, frame 148
+## Next: frame 161
 
-The state now matches through frame 133 and the pixels through 147. Two frontiers, in order:
+State and pixels now diverge at the same frame for the first time, which is a good sign that
+nothing is hiding: `fuel_level_e`, and `coll_flags1`/`var_188e` for actor 7. The pixel
+difference is at `x 281..286, y 44..50` -- in the status panel, not the maze.
 
-**Frame 134, state.** Actor 20 goes its own way: `ship_cellx/celly/ofsx/ofsy`, `coll_flags1`,
-`var_188e` and `ship_kind` all differ for that one actor, and `rnd_state` and `time_5bit` with
-them. `ship_kind[20]` differing (original 11h, port 10h) is the interesting part — the two
-sides disagree about *what that actor is*, not just where it is, which points at actor
-creation or destruction rather than movement. The partial `FIXME` routines below are the
-suspects.
+The method that has worked three times running, and is worth reaching for first:
 
-**Frame 148, pixels.** 14 bytes, `x 56..105, y 189..191` — a few pixel fragments on the bottom
-edge of the maze, an actor clipped at the border. Small and self-contained; probably a
-worthwhile one to take first, since it is a drawing difference rather than a state one.
+1. `--compare` names the first variable to differ and the frame.
+2. If `rnd_state` and `time_5bit` are among them, the two sides made a different *number* of
+   random draws that frame, and the cause is upstream of the RNG rather than in it. Trace every
+   draw on both sides and diff the sequences -- the first row where they differ says which
+   routine went its own way, and on the guest side the return address on the stack names the
+   call site outright.
+3. Only then read the disassembly for that routine.
+
+Reasoning from the disassembly first has been slower and twice pointed at the wrong routine.
 
 ## What is still missing
 
-The port has 6 routines carrying `FIXME`. Two are entirely empty, four partial:
+The port has 5 routines carrying `FIXME`. Two are entirely empty, three partial:
 
 | state | routine |
 | --- | --- |
 | empty | `inc_fuel`, `update_hisco` |
-| partial | `is_actor_close`, `explode_bullets`, `draw_enemy_base`, `draw_enemies` |
+| partial | `explode_bullets`, `draw_enemy_base`, `draw_enemies` |
 
 `update_fuel` and `proc_60` were two of the empty ones and are now done: `update_fuel` was
-worth 131 frames on its own, `proc_60` another 16. The harness is the tool for prioritising the
-rest: implement one, re-measure, see what it buys.
+worth 131 frames on its own, `proc_60` another 16, and three wrong constants another 13. The
+harness is the tool for prioritising the rest: implement one, re-measure, see what it buys.
 
-Two constants were wrong and are now fixed. `proc_58` ended `while (dh & 80)` — decimal 80,
+Four constants were wrong and are now fixed. `proc_58` ended `while (dh & 80)` — decimal 80,
 i.e. `50h` — where `2913:2C35` is `test dh,dh` / `js`, a test of bit 7; `dh` is only ever `FFh`
 or `00h` during the demo so both spellings happened to agree, but it would have diverged the
 moment it wasn't. The real one was in `proc_60`'s caller: `2913:2775` does
 `mov al,dl / sub dl,vel_magn[si] / jns loc_302`, and the port never did that subtraction, so an
 actor that had just chosen a new count stored it undecremented and ran one step long. That was
 the frame-12 divergence.
+
+The other two were both `15h` read as decimal 31. `spawn_enemy` (2913:238F, 2913:239D) will
+recycle an actor only for a base within ten cells of the player; the port allowed fifteen, so
+it spawned enemies the original refused to. And `is_actor_close` (2913:158B) wanted `ofsy >= 15h`
+where the port had `>= 31`. The same routine had one more: at 2913:15A5 a `jb` with a
+displacement of *zero* lands on the instruction it falls through to, so the `cmp al,0EBh` above
+it decides nothing and the case is just `ofsy < 0` -- the port had encoded the dead comparison
+as `< -21`, and its own FIXME comment had already guessed as much.
 
 ## Comparing state, not just pixels
 
