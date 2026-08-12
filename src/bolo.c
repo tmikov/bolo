@@ -546,6 +546,18 @@ static inline bool ega_test(unsigned offset, uint8_t val) {
   return (ega_read(offset) & val) != 0;
 }
 
+/// The `or es:[di],reg` the original uses to draw over what is already there.
+///
+/// On the EGA that instruction is a read-modify-write, and its read side
+/// returns whichever plane read map select names -- plane 3 for the whole of
+/// this game, set once at 2913:02D7. So the byte written back is plane 3's
+/// content OR the new bits, and the map mask then puts *that* into every
+/// selected plane: a pixel already lit in plane 3 gets lit in the others too.
+///
+/// A plain store -- `stosb`, `mov es:[di],al` -- carries no such term; use
+/// ega_or for those.
+static inline void ega_or_rmw(unsigned offset, uint8_t value, uint8_t mask);
+
 static inline void ega_or(unsigned offset, uint8_t value, uint8_t mask) {
   if (mask & 1)
     g_ega_screen[0][offset] |= value;
@@ -555,6 +567,10 @@ static inline void ega_or(unsigned offset, uint8_t value, uint8_t mask) {
     g_ega_screen[2][offset] |= value;
   if (mask & 8)
     g_ega_screen[3][offset] |= value;
+}
+
+static inline void ega_or_rmw(unsigned offset, uint8_t value, uint8_t mask) {
+  ega_or(offset, (uint8_t)(value | ega_read(offset)), mask);
 }
 
 static inline void ega_xor(unsigned offset, uint8_t value, uint8_t mask) {
@@ -2233,7 +2249,8 @@ static void update_bullets(unsigned seg) {
     y = y + step.y * 8;
 
     if (in_screen(x, y)) {
-      ega_or(seg + vid_offset(x, y), vid_mask(x), EGAYellow);
+      // 2913:1672  or es:[di],al
+      ega_or_rmw(seg + vid_offset(x, y), vid_mask(x), EGAYellow);
       bullet_x[i] = x;
       bullet_y[i] = y;
     } else {
@@ -2964,14 +2981,8 @@ static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBit
     --vidOfs;
     if (x >= 8 && x < MAZE_SCREEN_W + 8) {
       uint8_t vidBits = ega_read(vidOfs);
-      // 2913:1F2E / 1F9D  or es:[di],ah -- a read-modify-write, and on the EGA
-      // the read side returns the plane named by read map select, which is
-      // plane 3. So the byte written back is plane 3's content OR the base's
-      // bits, and the map mask puts that into *every* selected plane. A pixel
-      // the explosion had already lit in plane 3 therefore gains planes 0 and
-      // 1 here as well. The first byte of each row is written with `stosb`
-      // instead, which is a plain store and carries no such term.
-      ega_or(vidOfs, (uint8_t)(bits >> 8) | vidBits, EGAHighCyan);
+      // 2913:1F2E  or es:[di],ah
+      ega_or_rmw(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
       vidBits &= (uint8_t)(bits >> 8);
       collisions |= vidBits;
       bits ^= (uint32_t)vidBits << 8;
@@ -2980,7 +2991,8 @@ static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBit
     --vidOfs;
     if (x >= 16 && x < MAZE_SCREEN_W + 16) {
       uint8_t vidBits = ega_read(vidOfs);
-      ega_or(vidOfs, (uint8_t)(bits >> 16) | vidBits, EGAHighCyan);
+      // 2913:1F45  or es:[di],dl
+      ega_or_rmw(vidOfs, (uint8_t)(bits >> 16), EGAHighCyan);
       vidBits &= (uint8_t)(bits >> 16);
       collisions |= vidBits;
       bits ^= (uint32_t)vidBits << 16;
@@ -3022,9 +3034,8 @@ static uint8_t draw_base_vert(unsigned vidSeg, int x, int y, uint8_t *pBaseBits)
     --vidOfs;
     if (x >= 8 && x < MAZE_SCREEN_W + 8) {
       uint8_t vidBits = ega_read(vidOfs);
-      // See draw_base_horiz: 2913:1F9D is a read-modify-write OR, so plane 3's
-      // content is written into every selected plane along with the bits.
-      ega_or(vidOfs, (uint8_t)(bits >> 8) | vidBits, EGAHighCyan);
+      // 2913:1F9D  or es:[di],ah
+      ega_or_rmw(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
       vidBits &= (uint8_t)(bits >> 8);
       collisions |= vidBits;
       bits ^= vidBits << 8;
