@@ -3536,8 +3536,12 @@ static void draw_enemies(unsigned vidSeg) {
 
     var_188e[actor] = 0x0A;
 
+    // 2913:2587  and al,0Fh / cbw / mov di,ax / mov ds:base_194e[di],ah.
+    // The cbw is what supplies the value: al is at most 0Fh, so ah comes back
+    // zero and that zero is what gets stored. collide_cell spells the same
+    // thing out at 2913:2756.
     if (cFlags & 0x70)
-      base_194e[cFlags & 0x0F] = cFlags & 0xF0;
+      base_194e[cFlags & 0x0F] = 0;
 
     coll_flags1[actor] = 1;
 
