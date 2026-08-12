@@ -3228,8 +3228,6 @@ static void proc_35(void) {
         *tail++ = index;
       }
     }
-    cellFlags >>= 1;
-
     // Below original point.
     index += 8;
     if ((cellFlags & W_B) == 0) {
