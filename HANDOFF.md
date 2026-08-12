@@ -1,8 +1,8 @@
 # HANDOFF
 
-Written 2026-08-10. **All three plans of the fidelity harness are done, the first divergence
-it found has been closed, and the harness now compares game state as well as pixels.** This
-describes a point in time — replace it when the baseline moves again.
+Written 2026-08-11. **All three plans of the fidelity harness are done, and the port now
+reproduces the original's entire attract demo byte for byte.** This describes a point in time —
+replace it when the baseline moves again.
 
 ## The headline
 
@@ -12,31 +12,53 @@ The harness works, and it has an answer.
 written from its own disassembly, alongside the C port, with their EGA planes compared frame
 by frame.
 
-**The port is frame-exact against the original for the first 163 frames**, out of the 440 the
-attract demo runs. `emu/baseline.txt` reads `163`.
+**The port is frame-exact against the original for all 440 frames of the attract demo** — every
+plane, every pixel, and every mirrored variable. `emu/baseline.txt` reads `440`, and the
+comparison now ends because the original's recorded key script reaches its ESC, not because the
+two sides differ.
 
 That is the whole screen — maze, ship, HUD, gauge, radar, compass — matching byte for byte,
 frame after frame, against the original binary executing under the interpreter.
 
-## Next: frame 164
+## Next: past the attract demo
 
-Actor 30 diverges first, at frame 162 in state -- `ship_ofsy`, `ship_angle`, `var_188e` -- with
-the pixels following at 164. `var_188e[30]` going to 00h in the original against 20h in the
-port is the same shape as the frame-12 bug: a countdown reset that one side made and the other
-did not.
+The demo no longer diverges, so the ratchet has nothing left to catch. That does **not** mean
+the port is faithful — it means the demo has stopped exercising the difference. The demo never
+fires under human control, never loses a life, never finishes a level, and never reaches the
+high-score entry.
 
-The method, which has now worked four times:
+Three ways forward, in rough order of value:
+
+1. **Drive input.** `machine_press_key()` exists and the comparison does not use it. A recorded
+   key script fed to both sides would exercise firing, dying and level completion — where
+   `update_hisco` and the remaining partial routines live.
+2. **Sweep the remaining read-modify-writes.** Nine `or es:[di]` sites still use plain `ega_or`
+   (in `draw_maze`, `explode_bullets`, `draw_explosion`). Each is a latent copy of the bug fixed
+   at frames 209, 297 and 367, and has stayed quiet only because plane 3 happened to be clear
+   beneath it. `ega_or_rmw` is the operation they want. The lone `xor es:[di],al` at 2913:0B4C
+   deserves the same look.
+3. **Audit `ega_write` against the OR-mode window.** The EGA's write function is OR between
+   2913:0238 and 2913:0255, which covers `do_explosions`, `proc_31`, `draw_enemies`, `draw_ship`
+   and `update_bullets`. A plain store the port renders as `ega_write` inside that window is a
+   replace where the hardware ORs — exactly the frame-367 bug. Two such sites are fixed; the
+   others should each be checked against where they run.
+
+## How these were found
+
+The method that worked for every divergence in this round:
 
 1. `--compare` names the first variable to differ and the frame.
 2. If `rnd_state` and `time_5bit` are among them, the two sides made a different *number* of
    random draws that frame, so the cause is upstream of the RNG rather than in it. Trace every
    draw on both sides and diff the sequences; the first differing row names the routine, and on
    the guest side the return address on the stack names the call site outright.
-3. If they are *not* among them, as at frame 161, the divergence is plain logic: trace the
-   routine's arguments on both sides and walk in until they stop agreeing.
-4. Only then read the disassembly.
+3. If they are not among them, it is plain logic: trace the routine's arguments on both sides
+   and walk inward until they stop agreeing.
+4. For a pixel difference with no state difference, log every write to the offending byte on
+   both sides — the guest's `cpu.ip` at the write names the instruction outright.
+5. Only then read the disassembly.
 
-Reasoning from the disassembly first has been slower every time, and twice pointed at the wrong
+Reasoning from the disassembly first was slower every time, and twice pointed at the wrong
 routine.
 
 ## What is still missing
@@ -52,10 +74,11 @@ The port has 5 routines carrying `FIXME`. Two are entirely empty, three partial:
 only the first. The other two live in routines that are still partial, so they are waiting on
 those rather than missing outright.
 
-`update_fuel`, `proc_60` and `inc_fuel` were three of the empty ones and are now done:
-`update_fuel` was worth 131 frames on its own, `proc_60` another 16, three wrong constants
-another 13, and frame 161 another 3. The harness is the tool for prioritising the rest:
-implement one, re-measure, see what it buys.
+`update_fuel`, `proc_60` and `inc_fuel` were three of the empty ones and are now done, and the
+baseline went 0 -> 131 -> 147 -> 160 -> 163 -> 208 -> 269 -> 296 -> 366 -> 440 across this
+work. The harness is the tool for prioritising the rest: implement one, re-measure, see what it
+buys. Note that a routine being `FIXME` no longer means the demo will catch it -- the demo is
+exhausted, so the next round needs input (see above).
 
 Four constants were wrong and are now fixed. `proc_58` ended `while (dh & 80)` — decimal 80,
 i.e. `50h` — where `2913:2C35` is `test dh,dh` / `js`, a test of bit 7; `dh` is only ever `FFh`
@@ -87,8 +110,8 @@ it differs; `--watch NAME[:ELEMENT]` prints both sides' value of one of them eve
 is what shows a sequence going out of step.
 
 ```sh
-./build/emu/bolotest --compare --ticks 400 --out /tmp/cmp
-./build/emu/bolotest --compare --ticks 400 --out /tmp/cmp --watch var_188e:31
+./build/emu/bolotest --compare --ticks 800 --out /tmp/cmp
+./build/emu/bolotest --compare --ticks 800 --out /tmp/cmp --watch var_188e:31
 ```
 
 Two cautions, both learned the hard way:
@@ -105,7 +128,8 @@ Two cautions, both learned the hard way:
 
 ## What to do next
 
-**Take the frame-148 pixel divergence**, then the frame-134 state one — both described above.
+**Give the comparison some input**, as described above. Until then the ratchet is pinned at the
+full length of the demo and cannot move.
 
 When it moves, commit the new baseline. The tool prints `IMPROVED: update emu/baseline.txt to
 N`; a human commits it. **The tool never rewrites that file**, because a number that always
