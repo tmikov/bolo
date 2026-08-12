@@ -42,10 +42,18 @@
 /// which the original makes deliberately (hence the guard row in front of
 /// _ext_maze_buf). So it is a known, deliberate infidelity.
 ///
-/// It appears not to fire during the attract demo: turning it off shifts no
-/// frame of `bolotest --compare` beyond the ~12 bytes DEBUG_SHOW_BASES accounts
-/// for. That means the comparison cannot currently tell you what removing it
-/// would cost, and it is not evidence that removing it is safe.
+/// Measured, now that the demo matches end to end: it never fires. Instrumenting
+/// the condition over all 440 frames counts zero triggers, and turning the
+/// toggle off leaves every frame identical. So the match does not depend on it,
+/// and the comparison cannot tell you what removing it would cost.
+///
+/// Removing it is not a small change, and the reason is worth knowing. The
+/// original's maze_buf sits at 3F89h and runs 4096 bytes to 4F89h, which is
+/// var_182e -- so an out-of-range access above the maze reads and writes the
+/// game state that follows it, deterministically. The port's _ext_maze_buf has
+/// a guard row in front and nothing behind, so the same access runs off the end
+/// of the array. Being faithful here means giving maze_buf the neighbours the
+/// original has, not just deleting the check.
 #define CLAMP_ACTOR_TO_MAZE 1
 
 /// Skip the title screen and the level/density editor, starting directly on
