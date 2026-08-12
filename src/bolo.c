@@ -3301,7 +3301,10 @@ static void proc_37(int8_t dl_x, int8_t dh_y) {
         break;
 
       ofs49b += d49_0;
-      buf49[ofs49b] = val49;
+      // 2913:22F2  or ds:buf49[bx],al -- the twelve passes overlap, and each
+      // one contributes bits to the cells it crosses rather than replacing
+      // what an earlier pass put there.
+      buf49[ofs49b] |= val49;
       p9x9Cell += dCell0;
       val49 ^= 0x0F;
 
