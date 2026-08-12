@@ -3260,7 +3260,7 @@ typedef struct S7 {
   uint8_t cellFlMask1;
 } S7;
 
-// TODO: check row 5.
+/// 2913:2257, twelve rows of seven bytes, verified against the listing.
 static const S7 var_158[12] = {
     // clang-format off
   { -1,  0, -1,  0, CELL_FL | W_L, 0x0F, CELL_FL | W_L},
@@ -3268,8 +3268,7 @@ static const S7 var_158[12] = {
   { -9,  0, -7,  0, CELL_FL | W_T, 0x0F, CELL_FL | W_T},
   {  9,  0,  7,  0, CELL_FL | W_B, 0x0F, CELL_FL | W_B},
   { -1, -9, -1, -7, CELL_FL | W_L, 0x03, CELL_FL | W_T},
-  //{  1,  9,  1,  7, CELL_FL | W_L /*W_R?*/, 0x09, CELL_FL | W_B},
-  {  1,  9,  1,  7, CELL_FL | W_R /*was W_L*/, 0x09, CELL_FL | W_B},
+  {  1,  9,  1,  7, CELL_FL | W_L, 0x09, CELL_FL | W_B},
   { -9, -1, -7, -1, CELL_FL | W_T, 0x0C, CELL_FL | W_L},
   { -9,  1, -7,  1, CELL_FL | W_T, 0x09, CELL_FL | W_R},
   {  1, -9,  1, -7, CELL_FL | W_R, 0x06, CELL_FL | W_T},
