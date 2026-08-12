@@ -2964,7 +2964,14 @@ static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBit
     --vidOfs;
     if (x >= 8 && x < MAZE_SCREEN_W + 8) {
       uint8_t vidBits = ega_read(vidOfs);
-      ega_or(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
+      // 2913:1F2E / 1F9D  or es:[di],ah -- a read-modify-write, and on the EGA
+      // the read side returns the plane named by read map select, which is
+      // plane 3. So the byte written back is plane 3's content OR the base's
+      // bits, and the map mask puts that into *every* selected plane. A pixel
+      // the explosion had already lit in plane 3 therefore gains planes 0 and
+      // 1 here as well. The first byte of each row is written with `stosb`
+      // instead, which is a plain store and carries no such term.
+      ega_or(vidOfs, (uint8_t)(bits >> 8) | vidBits, EGAHighCyan);
       vidBits &= (uint8_t)(bits >> 8);
       collisions |= vidBits;
       bits ^= (uint32_t)vidBits << 8;
@@ -2973,7 +2980,7 @@ static uint8_t draw_base_horiz(unsigned vidSeg, int x, int y, uint16_t *pBaseBit
     --vidOfs;
     if (x >= 16 && x < MAZE_SCREEN_W + 16) {
       uint8_t vidBits = ega_read(vidOfs);
-      ega_or(vidOfs, (uint8_t)(bits >> 16), EGAHighCyan);
+      ega_or(vidOfs, (uint8_t)(bits >> 16) | vidBits, EGAHighCyan);
       vidBits &= (uint8_t)(bits >> 16);
       collisions |= vidBits;
       bits ^= (uint32_t)vidBits << 16;
@@ -3015,7 +3022,9 @@ static uint8_t draw_base_vert(unsigned vidSeg, int x, int y, uint8_t *pBaseBits)
     --vidOfs;
     if (x >= 8 && x < MAZE_SCREEN_W + 8) {
       uint8_t vidBits = ega_read(vidOfs);
-      ega_or(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
+      // See draw_base_horiz: 2913:1F9D is a read-modify-write OR, so plane 3's
+      // content is written into every selected plane along with the bits.
+      ega_or(vidOfs, (uint8_t)(bits >> 8) | vidBits, EGAHighCyan);
       vidBits &= (uint8_t)(bits >> 8);
       collisions |= vidBits;
       bits ^= vidBits << 8;
