@@ -2912,15 +2912,19 @@ static uint8_t /*ah*/ draw_enemy_base(unsigned vidSeg, unsigned baseIndex) {
       while (vidMask >>= 1)
         bits <<= 1;
 
+      // 2913:1E5C and 1E70 are `stosb`, plain stores -- but the EGA's write
+      // function is OR for this whole part of the frame (set at 2913:0238,
+      // cleared at 0255), so the store combines with the latch the read above
+      // just loaded. That is an OR into the plane, not a replace.
       if (x >= 0 && x < MAZE_SCREEN_W) {
         collision |= ega_read(vidOfs) & (uint8_t)bits;
-        ega_write(vidOfs, (uint8_t)bits, EGAHighCyan);
+        ega_or(vidOfs, (uint8_t)bits, EGAHighCyan);
       }
 
       --vidOfs;
       if (x >= 8 && x < MAZE_SCREEN_W + 8) {
         collision |= ega_read(vidOfs) & (uint8_t)(bits >> 8);
-        ega_write(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
+        ega_or(vidOfs, (uint8_t)(bits >> 8), EGAHighCyan);
       }
     }
 
