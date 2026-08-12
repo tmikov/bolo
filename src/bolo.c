@@ -1283,6 +1283,17 @@ static void draw_maze(unsigned seg) {
 /// \p seg      base offset in EGA memory
 /// \p lenm1    length  minus 1.
 /// 2913:05F5                       vert_line       proc    near
+/// 2913:05F5 vert_line and 2913:0602 horiz_line both plot with
+/// `or es:[di],al` (05F9, 0608, 0629), which is a read-modify-write whose read
+/// returns plane 3 -- and they run *before* 2913:0238 puts the EGA in OR mode,
+/// so the value lands in each masked plane by replacement: plane = plane3 | al.
+///
+/// That is not what ega_or does, and here it does not need to be. The mask is
+/// EGAWhite, so every plane receives the same byte and they stay identical to
+/// plane 3; the maze area is cleared by clr_alt_box immediately before, so they
+/// start identical too. Under that invariant `plane = plane3 | al` and
+/// `plane |= al` cannot be told apart. These are deliberately left as ega_or --
+/// see ega_or_rmw for the sites where the difference does show.
 static void vert_line(unsigned seg, unsigned x, unsigned y, unsigned lenm1) {
   unsigned ofs = seg + vid_offset(x, y);
   uint8_t bits = vid_mask(x);
@@ -1636,6 +1647,11 @@ static bool update_fuel(void) {
 
   unsigned vidOfs = vid_offset(x, 72);
   uint8_t vidMask = vid_mask(x);
+  // 2913:0B4C  xor es:[di],al -- a read-modify-write like the maze lines, and
+  // also outside the OR-mode stretch, so the plane gets plane3 ^ al by
+  // replacement. EGAHighBlue masks planes 0 and 3, both receive the same byte,
+  // and the gauge is the only thing that draws in this strip, so the two planes
+  // never drift apart and plane3 ^ al is the plane's own value ^ al.
   for (unsigned row = 0; row != 14; ++row) {
     ega_xor(vidOfs, vidMask, EGAHighBlue);
     ega_xor(EGA_PAGE_SIZE + vidOfs, vidMask, EGAHighBlue);
